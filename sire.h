@@ -673,7 +673,7 @@ private:
 			return out;
 		}
 
-		static inline IDirect3DTexture9* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels, IDirect3DSurface9*& sout) {
+		static inline IDirect3DTexture9* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels, IDirect3DSurface9** sout) {
 			IDirect3DTexture9* out = nullptr;
 			HRESULT hr = dev->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
 
@@ -681,13 +681,14 @@ private:
 				IDirect3DSurface9* surf = GetSurfaceLevel(out, 0);
 				IDirect3DSurface9* tempSurf = CreateSurface(width, height, pixels);
 				CopyResource(surf, tempSurf);
-				sout = surf;
+
+				if (sout)
+					*sout = surf;
 
 				Release(tempSurf);
 			}
 			else {
 				printf("%s", GetErrorString(hr));
-				exit(0);
 			}
 
 			return out;
@@ -1504,7 +1505,7 @@ public:
 		switch (currentAPI) {
 		case SIRE_RENDERER_DX9: {
 			IDirect3DSurface9* sout = nullptr;
-			auto result = SireDirectX9::CreateTexture(width, height, pixels, sout);
+			auto result = SireDirectX9::CreateTexture(width, height, pixels, &sout);
 			out->w = width;
 			out->h = height;
 			out->format = 0;
