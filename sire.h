@@ -272,8 +272,8 @@ private:
 			std::swap(_34, _43);
 		}
 
-		D3DMATRIX const ToD3DMATRIX() {
-			D3DMATRIX out = {};
+		D3DXMATRIX ToD3DXMATRIX() {
+			D3DXMATRIX out = {};
 			out._11 = _11;
 			out._12 = _12;
 			out._13 = _13;
@@ -369,6 +369,21 @@ private:
 
 		static inline std::vector<tVertexLegacy> verticesLegacy;
 
+		static inline bool IsRendererActive() {
+			if (!dev)
+				return false;
+
+			D3DCAPS9 caps = {};
+			HRESULT hr = dev->GetDeviceCaps(&caps);
+
+			if (SUCCEEDED(hr)) {
+				hr = dev->TestCooperativeLevel();
+				return hr == D3D_OK;
+			}
+
+			return false;
+		}
+
 		static inline void Init(IDirect3DDevice9* d) {
 			dev = d;
 
@@ -426,60 +441,41 @@ private:
 			ib->Unlock();
 
 			tConstBuff tempcb = cb;
-			tempcb.matrix.Transpose();
+			D3DXMATRIX m = tempcb.matrix.ToD3DXMATRIX();
+			pct->SetMatrix(dev, pct->GetConstantByName(NULL, "proj"), &m);
+			pct->SetMatrix(dev, vct->GetConstantByName(NULL, "proj"), &m);
 
-			dev->SetPixelShaderConstantF(pct->GetSamplerIndex(pct->GetConstantByName(NULL, "proj")), (float*)&tempcb.matrix, 4);
-			dev->SetPixelShaderConstantI(pct->GetSamplerIndex(pct->GetConstantByName(NULL, "hasTex")), &tempcb.hasTex, 1);
-			dev->SetPixelShaderConstantI(pct->GetSamplerIndex(pct->GetConstantByName(NULL, "hasMask")), &tempcb.hasMask, 1);
-			
-			dev->SetVertexShaderConstantF(vct->GetSamplerIndex(vct->GetConstantByName(NULL, "proj")), (float*)&tempcb.matrix, 4);
-			dev->SetVertexShaderConstantI(vct->GetSamplerIndex(vct->GetConstantByName(NULL, "hasTex")), &tempcb.hasTex, 1);
-			dev->SetVertexShaderConstantI(vct->GetSamplerIndex(vct->GetConstantByName(NULL, "hasMask")), &tempcb.hasMask, 1);
+			pct->SetInt(dev, pct->GetConstantByName(NULL, "hasTex"), tempcb.hasTex);
+			pct->SetInt(dev, vct->GetConstantByName(NULL, "hasTex"), tempcb.hasTex);
+
+			pct->SetInt(dev, pct->GetConstantByName(NULL, "hasMask"), tempcb.hasMask);
+			pct->SetInt(dev, vct->GetConstantByName(NULL, "hasMask"), tempcb.hasMask);
 		}
 
 		static inline void Render() {
 			auto renderTarget = GetRenderTarget();
 			dev->SetRenderTarget(0, renderTarget);
 
-			//D3DXMATRIX m;
-			//D3DXMatrixIdentity(&m);
-			//
-			//dev->SetTransform(D3DTS_WORLD, &m);
-			//dev->SetTransform(D3DTS_VIEW, &m);
-			//
-			//tConstBuff tempcb = cb;
-			//m = tempcb.matrix.ToD3DMATRIX();
-			//dev->SetTransform(D3DTS_PROJECTION, &m);
+			dev->SetVertexDeclaration(vertexDeclaration);
 
 			dev->SetTexture(0, tex);
 			dev->SetTexture(1, mask);
 
-			dev->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX, 0);
-			dev->SetTextureStageState(1, D3DTSS_TEXCOORDINDEX, 1);
-			dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
-			dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-			dev->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_TEXTURE);
-			dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
-			dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-			dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_TEXTURE);
-			dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_MODULATE);
-			dev->SetTextureStageState(1, D3DTSS_COLORARG2, D3DTA_CURRENT);
-			dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-			dev->SetTextureStageState(1, D3DTSS_ALPHAARG1, D3DTA_CURRENT);
-
 			dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
 			dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
-			dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
-			dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+			dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+			dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+
+			dev->SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+			dev->SetSamplerState(1, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+			dev->SetSamplerState(1, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+			dev->SetSamplerState(1, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 
 			dev->SetPixelShader(pixelShader);
 			dev->SetVertexShader(vertexShader);
 
-			dev->SetFVF(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX2);
 			dev->SetStreamSource(0, vb, 0, sizeof(tVertexLegacy));
 			dev->SetIndices(ib);
-
-			dev->SetVertexDeclaration(vertexDeclaration);
 
 			dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, verticesLegacy.size(), 0, indices.size() / 3);
 		}
@@ -511,7 +507,7 @@ private:
 		}
 
 		static inline IDirect3DSurface9* GetBackBufferSurface(uint32_t buffer) {
-			static IDirect3DSurface9* out = nullptr;
+			IDirect3DSurface9* out = nullptr;
 			dev->GetBackBuffer(0, buffer, D3DBACKBUFFER_TYPE_MONO, &out);
 			return out;
 		}
@@ -530,7 +526,7 @@ private:
 
 		static inline uint8_t* Lock(IDirect3DTexture9* texture) {
 			D3DLOCKED_RECT out;
-			texture->LockRect(0, &out, nullptr, D3DLOCK_DISCARD);
+			texture->LockRect(0, &out, nullptr, 0);
 			return (uint8_t*)out.pBits;
 		}
 
@@ -540,7 +536,7 @@ private:
 
 		static inline uint8_t* Lock(IDirect3DSurface9* surface) {
 			D3DLOCKED_RECT out;
-			surface->LockRect(&out, nullptr, D3DLOCK_DISCARD);
+			surface->LockRect(&out, nullptr, 0);
 			return (uint8_t*)out.pBits;
 		}
 
@@ -565,7 +561,7 @@ private:
 			dev->SetRenderState(D3DRS_SRCBLENDALPHA, states.srcBlendAlpha);
 			dev->SetRenderState(D3DRS_DESTBLENDALPHA, states.destBlendAlpha);
 			dev->SetRenderState(D3DRS_BLENDOPALPHA, states.blendOpAlpha);
-			dev->SetRenderState(D3DRS_COLORWRITEENABLE, states.renderTargetWriteMask);
+			dev->SetRenderState(D3DRS_COLORWRITEENABLE, states.sampleMask);
 		}
 
 		static inline void SetViewport(tSireViewport viewport) {
@@ -657,7 +653,7 @@ private:
 
 		static inline IDirect3DSurface9* CreateSurface(uint32_t width, uint32_t height, uint8_t* pixels) {
 			IDirect3DSurface9* out = nullptr;
-			HRESULT hr = dev->CreateOffscreenPlainSurface(width, height, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
+			HRESULT hr = dev->CreateOffscreenPlainSurface(width, height, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
 
 			if (SUCCEEDED(hr)) {
 				if (pixels) {
@@ -675,17 +671,19 @@ private:
 
 		static inline IDirect3DTexture9* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels, IDirect3DSurface9** sout) {
 			IDirect3DTexture9* out = nullptr;
-			HRESULT hr = dev->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
+			HRESULT hr = dev->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
 
 			if (SUCCEEDED(hr)) {
 				IDirect3DSurface9* surf = GetSurfaceLevel(out, 0);
-				IDirect3DSurface9* tempSurf = CreateSurface(width, height, pixels);
-				CopyResource(surf, tempSurf);
 
 				if (sout)
 					*sout = surf;
 
-				Release(tempSurf);
+				if (pixels) {
+					IDirect3DSurface9* tempSurf = CreateSurface(width, height, pixels);
+					CopyResource(surf, tempSurf);
+					Release(tempSurf);
+				}
 			}
 			else {
 				printf("%s", GetErrorString(hr));
@@ -722,16 +720,14 @@ private:
 		static inline ID3D11ShaderResourceView* shaderResourceView0 = nullptr;
 		static inline ID3D11ShaderResourceView* shaderResourceView1 = nullptr;
 
-		static inline IDXGISwapChain* GetSwapChain() {
-			return swapchain;
-		}
+		static inline bool IsRendererActive() {
+			if (!swapchain)
+				return false;
 
-		static inline ID3D11Device* GetDev() {
-			return dev;
-		}
+			DXGI_SWAP_CHAIN_DESC desc;
+			HRESULT hr = swapchain->GetDesc(&desc);
 
-		static inline ID3D11DeviceContext* GetDevCon() {
-			return devcon;
+			return SUCCEEDED(hr) && desc.BufferCount > 0;
 		}
 
 		static inline void Init(IDXGISwapChain* sc) {
@@ -1097,9 +1093,9 @@ private:
 	static inline uint32_t numIndices;
 
 	static inline std::string hlslShader2_0 = R"(
-	uniform matrix proj;
-	uniform int hasTex;
-	uniform int hasMask;
+	matrix proj;
+	int hasTex;
+	int hasMask;
 	
 	sampler2D tex0 : register(s0);
 	sampler2D mask0 : register(s1);
@@ -1200,22 +1196,20 @@ public:
 	}
 
 	static inline bool IsRendererActive() {
-		bool result = false;
-
 		switch (currentAPI) {
 		case SIRE_RENDERER_DX9:
-			return SireDirectX9::GetDev();
+			return SireDirectX9::IsRendererActive();
 		case SIRE_RENDERER_DX10:
 			break;
 		case SIRE_RENDERER_DX11:
-			return SireDirectX11::GetSwapChain() && SireDirectX11::GetDev() && SireDirectX11::GetDevCon();
+			return SireDirectX11::IsRendererActive();
 		case SIRE_RENDERER_DX12:
 			break;
 		case SIRE_RENDERER_OPENGL:
 			break;
 		}
 
-		return result;
+		return false;
 	}
 
 	static inline void Begin() {
@@ -1469,13 +1463,13 @@ public:
 
 		switch (currentAPI) {
 		case SIRE_RENDERER_DX9: {
-			auto surf = SireDirectX9::GetBackBufferSurface(buffer);
-			auto desc = SireDirectX9::GetDesc(surf);
+			auto result = SireDirectX9::GetBackBufferSurface(buffer);
+			auto desc = SireDirectX9::GetDesc(result);
 			out->w = desc.Width;
 			out->h = desc.Height;
 			out->format = desc.Format;
 			out->ptrs[0] = nullptr;
-			out->ptrs[1] = (int32_t*)surf;
+			out->ptrs[1] = (int32_t*)result;
 		} break;
 		case SIRE_RENDERER_DX10:
 			break;
