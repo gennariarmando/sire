@@ -1,7 +1,7 @@
 #pragma once
-//#define SIRE_INCLUDE_DX9
+#define SIRE_INCLUDE_DX9
 //#define SIRE_INCLUDE_DX10
-//#define SIRE_INCLUDE_DX11
+#define SIRE_INCLUDE_DX11
 //#define SIRE_INCLUDE_DX12
 
 #include <iostream>
@@ -369,6 +369,8 @@ private:
 
 		static inline std::vector<tVertexLegacy> verticesLegacy;
 
+		static inline IDirect3DStateBlock9* stateBlock = nullptr;
+
 		static inline bool IsRendererActive() {
 			if (!dev)
 				return false;
@@ -423,7 +425,14 @@ private:
 			Release(vertexDeclaration);
 		}
 
-		static inline void Update() {
+		static inline void Begin() {
+			verticesLegacy.clear();
+
+			dev->CreateStateBlock(D3DSBT_ALL, &stateBlock);
+			stateBlock->Capture();
+		}
+
+		static inline void End() {
 			// Fallback to internal shaders if unset.
 			if (!pixelShader && internalPixelShader)
 				pixelShader = internalPixelShader;
@@ -450,9 +459,7 @@ private:
 
 			pct->SetInt(dev, pct->GetConstantByName(NULL, "hasMask"), tempcb.hasMask);
 			pct->SetInt(dev, vct->GetConstantByName(NULL, "hasMask"), tempcb.hasMask);
-		}
 
-		static inline void Render() {
 			auto renderTarget = GetRenderTarget();
 			dev->SetRenderTarget(0, renderTarget);
 
@@ -478,10 +485,12 @@ private:
 			dev->SetIndices(ib);
 
 			dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, verticesLegacy.size(), 0, indices.size() / 3);
-		}
 
-		static inline void Begin() {
-			verticesLegacy.clear();
+			if (stateBlock) {
+				stateBlock->Apply();
+				stateBlock->Release();
+				stateBlock = nullptr;
+			}
 		}
 
 		static inline void SetVerticesLegacy(tVertex const& v) {
@@ -720,6 +729,14 @@ private:
 		static inline ID3D11ShaderResourceView* shaderResourceView0 = nullptr;
 		static inline ID3D11ShaderResourceView* shaderResourceView1 = nullptr;
 
+		static inline ID3D11RasterizerState* rasterizerState = nullptr;
+		static inline ID3D11DepthStencilState* depthStencilState = nullptr;
+		static inline ID3D11BlendState* blendState = nullptr;
+
+		static inline FLOAT blendFactor[4] = {};
+		static inline UINT sampleMask = 0;
+		static inline UINT stencilRef = 0;
+
 		static inline bool IsRendererActive() {
 			if (!swapchain)
 				return false;
@@ -819,7 +836,13 @@ private:
 			devcon = nullptr;
 		}
 
-		static inline void Update() {
+		static inline void Begin() {
+			devcon->RSGetState(&rasterizerState);
+			devcon->OMGetDepthStencilState(&depthStencilState, &stencilRef);
+			devcon->OMGetBlendState(&blendState, blendFactor, &sampleMask);
+		}
+
+		static inline void End() {
 			// Fallback to internal shaders if unset.
 			if (!pixelShader && internalPixelShader)
 				pixelShader = internalPixelShader;
@@ -846,9 +869,7 @@ private:
 			devcon->Map(pb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 			memcpy(mappedResource.pData, &tempcb, sizeof(tempcb));
 			devcon->Unmap(pb, 0);
-		}
 
-		static inline void Render() {
 			devcon->IASetInputLayout(inputLayout);
 
 			auto renderTarget = GetRenderTarget();
@@ -883,6 +904,24 @@ private:
 			Release(renderTarget);
 			Release(shaderResourceView0);
 			Release(shaderResourceView1);
+
+			if (rasterizerState) {
+				devcon->RSSetState(rasterizerState);
+				rasterizerState->Release();
+				depthStencilState = nullptr;
+			}
+
+			if (depthStencilState) {
+				devcon->OMSetDepthStencilState(depthStencilState, stencilRef);
+				depthStencilState->Release();
+				depthStencilState = nullptr;
+			}
+
+			if (blendState) {
+				devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
+				blendState->Release();
+				blendState = nullptr;
+			}
 		}
 
 		static inline ID3D11RenderTargetView** GetRenderTargets() {
@@ -1228,6 +1267,9 @@ public:
 		case SIRE_RENDERER_DX9:
 			SireDirectX9::Begin();
 			break;
+		case SIRE_RENDERER_DX11:
+			SireDirectX11::Begin();
+			break;
 		}
 	}
 
@@ -1247,14 +1289,12 @@ public:
 
 		switch (currentAPI) {
 		case SIRE_RENDERER_DX9:
-			SireDirectX9::Update();
-			SireDirectX9::Render();
+			SireDirectX9::End();
 			break;
 		case SIRE_RENDERER_DX10:
 			break;
 		case SIRE_RENDERER_DX11:
-			SireDirectX11::Update();
-			SireDirectX11::Render();
+			SireDirectX11::End();
 			break;
 		case SIRE_RENDERER_DX12:
 			break;
