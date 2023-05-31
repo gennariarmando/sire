@@ -611,7 +611,7 @@ private:
 				break;
 			}
 
-			dev->DrawIndexedPrimitive(type, 0, 0, verticesLegacy.size(), 0, numIndices / 3);
+			dev->DrawIndexedPrimitive(type, 0, 0, static_cast<uint32_t>(verticesLegacy.size()), 0, numIndices / 3);
 
 			if (stateBlock) {
 				stateBlock->Apply();
@@ -730,7 +730,7 @@ private:
 		ID3DXBuffer* CompileShader(const std::string& str, const char* szEntrypoint, const char* szTarget) {
 			ID3DXBuffer* out;
 			ID3DXBuffer* outerr;
-			HRESULT hr = D3DXCompileShader(str.c_str(), str.size(), NULL, NULL, szEntrypoint, szTarget, 0, &out, &outerr, NULL);
+			HRESULT hr = D3DXCompileShader(str.c_str(), static_cast<uint32_t>(str.size()), NULL, NULL, szEntrypoint, szTarget, 0, &out, &outerr, NULL);
 			if (FAILED(hr)) {
 				if (outerr) {
 					char szError[256]{ 0 };
@@ -1172,7 +1172,7 @@ private:
 		}
 
 		ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
-			ID3D11Texture2D* out;
+			ID3D11Texture2D* out = nullptr;
 			swapchain->GetBuffer(buffer, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&out));
 			return out;
 		}
@@ -1215,21 +1215,21 @@ private:
 			return out;
 		}
 
-		ID3D11VertexShader* CreateVertexShader(const void* buffer, uint32_t size) {
+		ID3D11VertexShader* CreateVertexShader(const void* buffer, size_t size) {
 			ID3D11VertexShader* out = nullptr;
 			dev->CreateVertexShader(buffer, size, NULL, &out);
 			return out;
 		}
 
-		ID3D11PixelShader* CreatePixelShader(const void* buffer, uint32_t size) {
+		ID3D11PixelShader* CreatePixelShader(const void* buffer, size_t size) {
 			ID3D11PixelShader* out = nullptr;
 			dev->CreatePixelShader(buffer, size, NULL, &out);
 			return out;
 		}
 
-		ID3D11InputLayout* CreateInputLayout(std::vector<D3D11_INPUT_ELEMENT_DESC>* layout, const void* buffer, uint32_t size) {
+		ID3D11InputLayout* CreateInputLayout(std::vector<D3D11_INPUT_ELEMENT_DESC>* layout, const void* buffer, size_t size) {
 			ID3D11InputLayout* out = nullptr;
-			dev->CreateInputLayout(layout->data(), layout->size(), buffer, size, &out);
+			dev->CreateInputLayout(layout->data(), static_cast<uint32_t>(layout->size()), buffer, size, &out);
 			return out;
 		}
 
@@ -1286,12 +1286,14 @@ private:
 			desc.CPUAccessFlags = 0;
 			desc.MiscFlags = 0;
 
-			dev->CreateTexture2D(&desc, nullptr, &out);
+			HRESULT hr = dev->CreateTexture2D(&desc, nullptr, &out);
 
-			if (pixels) {
-				D3D11_TEXTURE2D_DESC desc;
-				out->GetDesc(&desc);
-				devcon->UpdateSubresource(out, 0, nullptr, pixels, desc.Width * sizeof(UINT), 0);
+			if (SUCCEEDED(hr)) {
+				if (pixels) {
+					D3D11_TEXTURE2D_DESC desc;
+					out->GetDesc(&desc);
+					devcon->UpdateSubresource(out, 0, nullptr, pixels, desc.Width * sizeof(UINT), 0);
+				}
 			}
 
 			return out;
@@ -1451,8 +1453,8 @@ private:
 		}
 
 		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
-			tex = texture ? *texture : 0;
-			mask = textureMask ? *textureMask : 0;
+			tex = texture ? static_cast<uint32_t>(*texture) : 0;
+			mask = textureMask ? static_cast<uint32_t>(*textureMask) : 0;
 		}
 
 		// End virtual override
@@ -1463,6 +1465,8 @@ private:
 			case SIRE_FILL_SOLID:
 				return GL_FILL;
 			}
+
+			return 0;
 		}
 
 		uint32_t SireToOpenGLCullMode(int8_t mode) {
@@ -1475,6 +1479,8 @@ private:
 				case SIRE_CULL_BACK:
 					return GL_BACK;
 			}
+
+			return 0;
 		}
 
 		uint32_t SireToOpenGLBlendState(int8_t blend) {
@@ -1514,6 +1520,8 @@ private:
 			//case SIRE_BLEND_INV_SRC1_ALPHA:
 			//	return GL_ONE_MINUS_SRC1_ALPHA;
 			}
+
+			return 0;
 		}
 
 		tSireTexture2D GetBackBuffer(uint32_t buffer) {
@@ -1714,7 +1722,7 @@ public:
 				indices.push_back(i++);
 			}
 
-			numIndices = indices.size();
+			numIndices = static_cast<uint32_t>(indices.size());
 		}
 
 		return GetRenderers(GetCurrentRenderer())->End();
@@ -1753,7 +1761,7 @@ public:
 		if (!IsRendererActive())
 			return;
 
-		tVertex v;
+		tVertex v = {};
 		v.pos.x = x;
 		v.pos.y = y;
 		v.pos.z = z;
@@ -1872,7 +1880,7 @@ public:
 		}
 
 		currentRenderer = re;
-		currentRendererMainPtr = (intptr_t*)ptr;
+		currentRendererMainPtr = reinterpret_cast<intptr_t*>(ptr);
 
 		return GetRenderers(GetCurrentRenderer())->Init(currentRendererMainPtr);
 	}
