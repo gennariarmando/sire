@@ -105,14 +105,15 @@ public:
 		SIRE_BLEND_OP_MAX = 5
 	};
 
-	enum eSireRenderAPI {
-		SIRE_RENDERER_NULL,
+	enum eSireRenderer {
+		SIRE_RENDERER_NULL = -1,
 		SIRE_RENDERER_DX9,
 		SIRE_RENDERER_DX10,
 		SIRE_RENDERER_DX11,
 		SIRE_RENDERER_DX12,
 		SIRE_RENDERER_OPENGL,
 		SIRE_RENDERER_VULKAN,
+		SIRE_NUM_RENDERERS,
 	};
 
 	enum eSireColorWriteEnable {
@@ -121,6 +122,12 @@ public:
 		SIRE_COLOR_WRITE_ENABLE_BLUE = 4,
 		SIRE_COLOR_WRITE_ENABLE_ALPHA = 8,
 		SIRE_COLOR_WRITE_ENABLE_ALL = (((D3D11_COLOR_WRITE_ENABLE_RED | D3D11_COLOR_WRITE_ENABLE_GREEN) | D3D11_COLOR_WRITE_ENABLE_BLUE) | D3D11_COLOR_WRITE_ENABLE_ALPHA)
+	};
+
+	enum eSirePrimitiveType {
+		SIRE_POINT,
+		SIRE_LINE,
+		SIRE_TRIANGLE,
 	};
 
 	struct tSireTexture2D {
@@ -137,14 +144,19 @@ public:
 				surface = nullptr;
 			}
 
+			~tSirePtrsHolder() {
+				Release();
+			}
+
 			void Release() {
-				switch (currentAPI) {
+				switch (GetCurrentRenderer()) {
 				case SIRE_RENDERER_DX9:
 					Sire::Release((IDirect3DTexture9*)texture);
 					Sire::Release((IDirect3DSurface9*)surface);
 					break;
 				case SIRE_RENDERER_DX11:
-					Sire::Release((ID3D11Texture2D*)texture);
+					Sire::Release((ID3D11ShaderResourceView*)texture);
+					Sire::Release((ID3D11Texture2D*)surface);
 					break;
 				case SIRE_RENDERER_OPENGL:
 					if (texture) {
@@ -158,21 +170,24 @@ public:
 				surface = nullptr;
 			}
 		};
-		tSirePtrsHolder* ptrs;
+		std::unique_ptr<tSirePtrsHolder> ptrs;
 
 		tSireTexture2D() {
 			w = 0;
 			h = 0;
 			format = 0;
-			ptrs = new tSirePtrsHolder();
+			ptrs = std::make_unique<tSirePtrsHolder>();
 		}
 
-		~tSireTexture2D() {
-			delete ptrs;
+		void Set(int32_t width, int32_t height, int32_t format, intptr_t* tex, intptr_t* surf) {
+			this->w = width;
+			this->h = height;
+			this->format = format;
+			this->ptrs->texture = tex;
+			this->ptrs->surface = surf;
 		}
 
 		void Release() {
-			Sire::Release(ptrs);
 			delete this;
 		}
 	};
@@ -203,19 +218,6 @@ private:
 		uint8_t fillMode;
 		uint8_t stencilEnable;
 		uint32_t sampleMask;
-	};
-
-	static inline tRenderState states = {
-		0,
-		SIRE_BLEND_SRC_ALPHA,
-		SIRE_BLEND_INV_SRC_ALPHA,
-		SIRE_BLEND_OP_ADD,
-		SIRE_BLEND_ONE,
-		SIRE_BLEND_ZERO,
-		SIRE_BLEND_OP_ADD,
-		SIRE_COLOR_WRITE_ENABLE_ALL,
-		SIRE_CULL_NONE,
-		SIRE_FILL_SOLID
 	};
 
 	struct alignas(16) tSireMatrix {
@@ -395,12 +397,14 @@ private:
 		float fov;
 		float nearPlane;
 		float farPlane;
+		tRenderState renderStates;
 
 		tSireShared() {
 			viewport = { 0.0f, 0.0f, 640.0f, 480.0f, 0.0f, 1.0f };
 			fov = 60.0f;
 			nearPlane = 0.0f;
 			farPlane = 1.0f;
+			renderStates = { 0, SIRE_BLEND_SRC_ALPHA, SIRE_BLEND_INV_SRC_ALPHA, SIRE_BLEND_OP_ADD, SIRE_BLEND_ONE, SIRE_BLEND_ZERO, SIRE_BLEND_OP_ADD, SIRE_COLOR_WRITE_ENABLE_ALL, SIRE_CULL_NONE, SIRE_FILL_SOLID };
 		}
 
 		~tSireShared() {
@@ -408,36 +412,65 @@ private:
 		}
 	};
 
-	static inline eSireRenderAPI currentAPI = SIRE_RENDERER_NULL;
-	static inline tConstBuff cb = { {}, false, false };
-	static inline intptr_t* apiptr = nullptr;
+	struct SireRenderer {
+		bool initialised;
 
-	struct SireDirectX9 {
-		static inline IDirect3DDevice9* dev = nullptr;
+		virtual bool IsRendererActive() { return false; }
+		virtual void Init(intptr_t* ptr) {}
+		virtual void Shutdown() {}
+		virtual void Begin() {}
+		virtual void End() {}
+		virtual void SetVertices(tVertex const& v) {}
+		virtual void SetRenderStates(tRenderState const& s) {}
+		virtual void SetViewport(tSireViewport const& v) {}
+		virtual void CopyResource(intptr_t* dst, intptr_t* src) {}
+		virtual void SetTexture(intptr_t* tex, intptr_t* mask) {}
 
-		static inline IDirect3DVertexBuffer9* vb = nullptr;
-		static inline IDirect3DIndexBuffer9* ib = nullptr;
+		SireRenderer() {
+			initialised = false;
+		}
 
-		static inline IDirect3DTexture9* tex = nullptr;
-		static inline IDirect3DTexture9* mask = nullptr;
+		bool operator==(const SireRenderer& other) const {
+			return false;
+		}
+	};
 
-		static inline IDirect3DVertexDeclaration9* vertexDeclaration = nullptr;
+	struct SireDirectX9 : SireRenderer {
+		IDirect3DDevice9* dev;
+		IDirect3DVertexBuffer9* vb;
+		IDirect3DIndexBuffer9* ib;
+		IDirect3DTexture9* tex;
+		IDirect3DTexture9* mask;
+		IDirect3DVertexDeclaration9* vertexDeclaration;
+		IDirect3DPixelShader9* pixelShader;
+		IDirect3DVertexShader9* vertexShader;
+		ID3DXConstantTable* pct;
+		ID3DXConstantTable* vct;
+		IDirect3DPixelShader9* internalPixelShader;
+		IDirect3DVertexShader9* internalVertexShader;
+		std::vector<tVertexLegacy> verticesLegacy;
+		IDirect3DStateBlock9* stateBlock;
 
-		static inline IDirect3DPixelShader9* pixelShader = nullptr;
-		static inline IDirect3DVertexShader9* vertexShader = nullptr;
+		SireDirectX9() : SireRenderer() {
+			dev = nullptr;
+			vb = nullptr;
+			ib = nullptr;
+			tex = nullptr;
+			mask = nullptr;
+			vertexDeclaration = nullptr;
+			pixelShader = nullptr;
+			vertexShader = nullptr;
+			pct = nullptr;
+			vct = nullptr;
+			internalPixelShader = nullptr;
+			internalVertexShader = nullptr;
+			verticesLegacy = {};
+			stateBlock = nullptr;
+		}
 
-		static inline ID3DXConstantTable* pct = nullptr;
-		static inline ID3DXConstantTable* vct = nullptr;
-
-		static inline IDirect3DPixelShader9* internalPixelShader = nullptr;
-		static inline IDirect3DVertexShader9* internalVertexShader = nullptr;
-
-		static inline std::vector<tVertexLegacy> verticesLegacy;
-
-		static inline IDirect3DStateBlock9* stateBlock = nullptr;
-
-		static inline bool IsRendererActive() {
-			if (!dev)
+		// Start virtual override
+		bool IsRendererActive() override {
+			if (!initialised || !dev)
 				return false;
 
 			D3DCAPS9 caps = {};
@@ -451,8 +484,11 @@ private:
 			return false;
 		}
 
-		static inline void Init(IDirect3DDevice9* d) {
-			dev = d;
+		void Init(intptr_t* d) override {
+			if (initialised)
+				return;
+
+			dev = reinterpret_cast<IDirect3DDevice9*>(d);
 
 			dev->CreateVertexBuffer(sizeof(tVertexLegacy) * 65536, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
 				0, D3DPOOL_DEFAULT, &vb, nullptr);
@@ -482,9 +518,14 @@ private:
 			};
 
 			dev->CreateVertexDeclaration(vertexElements, &vertexDeclaration);
+
+			initialised = true;
 		}
 
-		static inline void Shutdown() {
+		void Shutdown() override {
+			if (!initialised)
+				return;
+
 			Release(vb);
 			Release(ib);
 			Release(vertexDeclaration);
@@ -493,16 +534,19 @@ private:
 
 			tex = nullptr;
 			mask = nullptr;
+			dev = nullptr;
+
+			initialised = false;
 		}
 
-		static inline void Begin() {
+		void Begin() override {
 			verticesLegacy.clear();
 
 			dev->CreateStateBlock(D3DSBT_ALL, &stateBlock);
 			stateBlock->Capture();
 		}
 
-		static inline void End() {
+		void End() override {
 			// Fallback to internal shaders if unset.
 			if (!pixelShader && internalPixelShader)
 				pixelShader = internalPixelShader;
@@ -554,16 +598,29 @@ private:
 			dev->SetStreamSource(0, vb, 0, sizeof(tVertexLegacy));
 			dev->SetIndices(ib);
 
-			dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, verticesLegacy.size(), 0, numIndices / 3);
+			D3DPRIMITIVETYPE type = D3DPT_POINTLIST;
+			switch (primitiveType) {
+			case SIRE_LINE:
+				type = D3DPT_LINELIST;
+				break;
+			case SIRE_POINT:
+				type = D3DPT_POINTLIST;
+				break;
+			case SIRE_TRIANGLE:
+				type = D3DPT_TRIANGLELIST;
+				break;
+			}
+
+			dev->DrawIndexedPrimitive(type, 0, 0, verticesLegacy.size(), 0, numIndices / 3);
 
 			if (stateBlock) {
 				stateBlock->Apply();
-				stateBlock->Release();
+				Release(stateBlock);
 				stateBlock = nullptr;
 			}
 		}
-
-		static inline void SetVerticesLegacy(tVertex const& v) {
+		
+		void SetVertices(tVertex const& v) override {
 			tVertexLegacy vl = {};
 
 			vl.pos = v.pos;
@@ -579,82 +636,98 @@ private:
 			verticesLegacy.push_back(vl);
 		}
 
-		static inline IDirect3DSurface9* GetRenderTarget() {
+		void SetRenderStates(tRenderState const& s) override {
+			// Set rasterizer state
+			dev->SetRenderState(D3DRS_CULLMODE, s.cullMode);
+			dev->SetRenderState(D3DRS_FILLMODE, s.fillMode);
+
+			// Set blend state
+			dev->SetRenderState(D3DRS_ALPHABLENDENABLE, s.blendEnable);
+			dev->SetRenderState(D3DRS_SRCBLEND, s.srcBlend);
+			dev->SetRenderState(D3DRS_DESTBLEND, s.dstBlend);
+			dev->SetRenderState(D3DRS_BLENDOP, s.blendop);
+			dev->SetRenderState(D3DRS_SRCBLENDALPHA, s.srcBlendAlpha);
+			dev->SetRenderState(D3DRS_DESTBLENDALPHA, s.destBlendAlpha);
+			dev->SetRenderState(D3DRS_BLENDOPALPHA, s.blendOpAlpha);
+			dev->SetRenderState(D3DRS_COLORWRITEENABLE, s.sampleMask);
+		}
+
+		void SetViewport(tSireViewport const& v) {
+			D3DVIEWPORT9 vp = {};
+			vp.X = static_cast<DWORD>(v.x);
+			vp.Y = static_cast<DWORD>(v.y);
+			vp.Width = static_cast<DWORD>(v.w);
+			vp.Height = static_cast<DWORD>(v.h);
+			vp.MinZ = v.mind;
+			vp.MaxZ = v.maxd;
+			dev->SetViewport(&vp);
+		}
+
+		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+			cb.hasTex = texture ? true : false;
+			cb.hasMask = textureMask ? true : false;
+
+			tex = nullptr;
+			mask = nullptr;
+
+			if (texture)
+				tex = reinterpret_cast<IDirect3DTexture9*>(texture);
+
+			if (textureMask)
+				mask = reinterpret_cast<IDirect3DTexture9*>(textureMask);
+		}
+
+		void CopyResource(intptr_t* dst, intptr_t* src) override {
+			dev->StretchRect(reinterpret_cast<IDirect3DSurface9*>(src), nullptr, reinterpret_cast<IDirect3DSurface9*>(dst), nullptr, D3DTEXF_NONE);
+		}
+
+		// End virtual override
+
+		IDirect3DSurface9* GetRenderTarget() {
 			IDirect3DSurface9* out = nullptr;
 			dev->GetRenderTarget(0, &out);
 			return out;
 		}
 
-		static inline IDirect3DSurface9* GetBackBufferSurface(uint32_t buffer) {
+		IDirect3DSurface9* GetBackBufferSurface(uint32_t buffer) {
 			IDirect3DSurface9* out = nullptr;
 			dev->GetBackBuffer(0, buffer, D3DBACKBUFFER_TYPE_MONO, &out);
 			return out;
 		}
 
-		static inline D3DSURFACE_DESC GetDesc(IDirect3DSurface9* surface) {
+		D3DSURFACE_DESC GetDesc(IDirect3DSurface9* surface) {
 			D3DSURFACE_DESC out = {};
 			surface->GetDesc(&out);
 			return out;
 		}
 
-		static inline IDirect3DSurface9* GetSurfaceLevel(IDirect3DTexture9* texture, uint32_t level) {
+		IDirect3DSurface9* GetSurfaceLevel(IDirect3DTexture9* texture, uint32_t level) {
 			IDirect3DSurface9* out;
 			texture->GetSurfaceLevel(level, &out);
 			return out;
 		}
 
-		static inline uint8_t* Lock(IDirect3DTexture9* texture) {
+		uint8_t* Lock(IDirect3DTexture9* texture) {
 			D3DLOCKED_RECT out;
 			texture->LockRect(0, &out, nullptr, 0);
 			return (uint8_t*)out.pBits;
 		}
 
-		static inline void Unlock(IDirect3DTexture9* texture) {
+		void Unlock(IDirect3DTexture9* texture) {
 			texture->UnlockRect(0);
 		}
 
-		static inline uint8_t* Lock(IDirect3DSurface9* surface) {
+		uint8_t* Lock(IDirect3DSurface9* surface) {
 			D3DLOCKED_RECT out;
 			surface->LockRect(&out, nullptr, 0);
 			return (uint8_t*)out.pBits;
 		}
 
-		static inline void Unlock(IDirect3DSurface9* surface) {
+		void Unlock(IDirect3DSurface9* surface) {
 			surface->UnlockRect();
 		}
 
-		static inline IDirect3DDevice9* GetDev() {
-			return dev;
-		}
-
-		static inline void SetRenderState() {
-			// Set rasterizer state
-			dev->SetRenderState(D3DRS_CULLMODE, states.cullMode);
-			dev->SetRenderState(D3DRS_FILLMODE, states.fillMode);
-
-			// Set blend state
-			dev->SetRenderState(D3DRS_ALPHABLENDENABLE, states.blendEnable);
-			dev->SetRenderState(D3DRS_SRCBLEND, states.srcBlend);
-			dev->SetRenderState(D3DRS_DESTBLEND, states.dstBlend);
-			dev->SetRenderState(D3DRS_BLENDOP, states.blendop);
-			dev->SetRenderState(D3DRS_SRCBLENDALPHA, states.srcBlendAlpha);
-			dev->SetRenderState(D3DRS_DESTBLENDALPHA, states.destBlendAlpha);
-			dev->SetRenderState(D3DRS_BLENDOPALPHA, states.blendOpAlpha);
-			dev->SetRenderState(D3DRS_COLORWRITEENABLE, states.sampleMask);
-		}
-
-		static inline void SetViewport(tSireViewport viewport) {
-			D3DVIEWPORT9 vp = {};
-			vp.X = static_cast<DWORD>(viewport.x);
-			vp.Y = static_cast<DWORD>(viewport.y);
-			vp.Width = static_cast<DWORD>(viewport.w);
-			vp.Height = static_cast<DWORD>(viewport.h);
-			vp.MinZ = viewport.mind;
-			vp.MaxZ = viewport.maxd;
-			dev->SetViewport(&vp);
-		}
-
-		static inline ID3DXBuffer* CompileShader(const std::string& str, const char* szEntrypoint, const char* szTarget) {
+		ID3DXBuffer* CompileShader(const std::string& str, const char* szEntrypoint, const char* szTarget) {
 			ID3DXBuffer* out;
 			ID3DXBuffer* outerr;
 			HRESULT hr = D3DXCompileShader(str.c_str(), str.size(), NULL, NULL, szEntrypoint, szTarget, 0, &out, &outerr, NULL);
@@ -669,33 +742,19 @@ private:
 			return out;
 		}
 
-		static inline IDirect3DVertexShader9* CreateVertexShader(const void* buffer, uint32_t size) {
+		IDirect3DVertexShader9* CreateVertexShader(const void* buffer, uint32_t size) {
 			IDirect3DVertexShader9* pVertexShader = nullptr;
 			dev->CreateVertexShader(static_cast<const DWORD*>(buffer), &pVertexShader);
 			return pVertexShader;
 		}
 
-		static inline IDirect3DPixelShader9* CreatePixelShader(const void* buffer, uint32_t size) {
+		IDirect3DPixelShader9* CreatePixelShader(const void* buffer, uint32_t size) {
 			IDirect3DPixelShader9* pPixelShader = nullptr;
 			dev->CreatePixelShader(static_cast<const DWORD*>(buffer), &pPixelShader);
 			return pPixelShader;
 		}
 
-		static inline void SetTexture(IDirect3DTexture9* texture, IDirect3DTexture9* textureMask) {
-			cb.hasTex = texture ? true : false;
-			cb.hasMask = textureMask ? true : false;
-
-			tex = nullptr;
-			mask = nullptr;
-
-			if (texture)
-				tex = texture;
-
-			if (textureMask)
-				mask = textureMask;
-		}
-
-		static inline const char* GetErrorString(HRESULT hr) {
+		const char* GetErrorString(HRESULT hr) {
 			switch (hr) {
 			case D3D_OK:
 				return "D3D_OK: No error.";
@@ -736,7 +795,7 @@ private:
 			}
 		}
 
-		static inline IDirect3DSurface9* CreateSurface(uint32_t width, uint32_t height, uint8_t* pixels) {
+		IDirect3DSurface9* CreateSurface(uint32_t width, uint32_t height, uint8_t* pixels) {
 			IDirect3DSurface9* out = nullptr;
 			HRESULT hr = dev->CreateOffscreenPlainSurface(width, height, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
 
@@ -754,7 +813,7 @@ private:
 			return out;
 		}
 
-		static inline IDirect3DTexture9* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels, IDirect3DSurface9** sout) {
+		IDirect3DTexture9* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels, IDirect3DSurface9** sout) {
 			IDirect3DTexture9* out = nullptr;
 			HRESULT hr = dev->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
 
@@ -766,7 +825,7 @@ private:
 
 				if (pixels) {
 					IDirect3DSurface9* tempSurf = CreateSurface(width, height, pixels);
-					CopyResource(surf, tempSurf);
+					CopyResource(reinterpret_cast<intptr_t*>(surf), reinterpret_cast<intptr_t*>(tempSurf));
 					Release(tempSurf);
 				}
 			}
@@ -776,45 +835,64 @@ private:
 
 			return out;
 		}
-
-		static inline void CopyResource(IDirect3DSurface9* dst, IDirect3DSurface9* src) {
-			dev->StretchRect(src, nullptr, dst, nullptr, D3DTEXF_NONE);
-		}
 	};
 
-	struct SireDirectX11 {
-		static inline IDXGISwapChain* swapchain = nullptr;
-		static inline ID3D11Device* dev = nullptr;
-		static inline ID3D11DeviceContext* devcon = nullptr;
+	struct SireDirectX10 : SireRenderer {
 
-		static inline ID3D11Buffer* vb = nullptr;
-		static inline ID3D11Buffer* ib = nullptr;
 
-		static inline ID3D11Buffer* pb = nullptr;
+	};
 
-		static inline ID3D11SamplerState* ss = nullptr;
+	struct SireDirectX11 : SireRenderer {
+		IDXGISwapChain* swapchain;
+		ID3D11Device* dev;
+		ID3D11DeviceContext* devcon;
+		ID3D11Buffer* vb;
+		ID3D11Buffer* ib;
+		ID3D11Buffer* pb;
+		ID3D11SamplerState* ss;
+		ID3D11InputLayout* inputLayout;
+		ID3D11VertexShader* vertexShader;
+		ID3D11PixelShader* pixelShader;
+		ID3D11VertexShader* internalVertexShader;
+		ID3D11PixelShader* internalPixelShader;
+		ID3D11ShaderResourceView* tex;
+		ID3D11ShaderResourceView* mask;
+		ID3D11RasterizerState* rasterizerState;
+		ID3D11DepthStencilState* depthStencilState;
+		ID3D11BlendState* blendState;
+		FLOAT blendFactor[4];
+		UINT sampleMask;
+		UINT stencilRef;
 
-		static inline ID3D11InputLayout* inputLayout = nullptr;
+		SireDirectX11() : SireRenderer() {
+			swapchain = nullptr;
+			dev = nullptr;
+			devcon = nullptr;
+			vb = nullptr;
+			ib = nullptr;
+			pb = nullptr;
+			ss = nullptr;
+			inputLayout = nullptr;
+			vertexShader = nullptr;
+			pixelShader = nullptr;
+			internalVertexShader = nullptr;
+			internalPixelShader = nullptr;
+			tex = nullptr;
+			mask = nullptr;
+			rasterizerState = nullptr;
+			depthStencilState = nullptr;
+			blendState = nullptr;
+			blendFactor[0] = 0.0f;
+			blendFactor[1] = 0.0f;
+			blendFactor[2] = 0.0f;
+			blendFactor[3] = 0.0f;
+			sampleMask = 0;
+			stencilRef = 0;
+		}
 
-		static inline ID3D11VertexShader* vertexShader = nullptr;
-		static inline ID3D11PixelShader* pixelShader = nullptr;
-
-		static inline ID3D11VertexShader* internalVertexShader = nullptr;
-		static inline ID3D11PixelShader* internalPixelShader = nullptr;
-
-		static inline ID3D11ShaderResourceView* shaderResourceView0 = nullptr;
-		static inline ID3D11ShaderResourceView* shaderResourceView1 = nullptr;
-
-		static inline ID3D11RasterizerState* rasterizerState = nullptr;
-		static inline ID3D11DepthStencilState* depthStencilState = nullptr;
-		static inline ID3D11BlendState* blendState = nullptr;
-
-		static inline FLOAT blendFactor[4] = {};
-		static inline UINT sampleMask = 0;
-		static inline UINT stencilRef = 0;
-
-		static inline bool IsRendererActive() {
-			if (!swapchain || !dev || !devcon)
+		// Start virtual override
+		bool IsRendererActive() override {
+			if (!initialised || !swapchain || !dev || !devcon)
 				return false;
 
 			DXGI_SWAP_CHAIN_DESC desc;
@@ -823,8 +901,11 @@ private:
 			return SUCCEEDED(hr) && desc.BufferCount > 0;
 		}
 
-		static inline void Init(IDXGISwapChain* sc) {
-			swapchain = sc;
+		void Init(intptr_t* ptr) override {
+			if (initialised)
+				return;
+
+			swapchain = reinterpret_cast<IDXGISwapChain*>(ptr);
 			HRESULT hResult = swapchain->GetDevice(__uuidof(ID3D11Device), (void**)&dev);
 
 			if (FAILED(hResult))
@@ -894,9 +975,14 @@ private:
 
 			Release(VS);
 			Release(PS);
+
+			initialised = true;
 		}
 
-		static inline void Shutdown() {
+		void Shutdown() override {
+			if (!initialised)
+				return;
+
 			Release(vb);
 			Release(ib);
 			Release(pb);
@@ -904,8 +990,6 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
-			Release(shaderResourceView0);
-			Release(shaderResourceView1);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
@@ -913,15 +997,17 @@ private:
 			swapchain = nullptr;
 			dev = nullptr;
 			devcon = nullptr;
+
+			initialised = false;
 		}
 
-		static inline void Begin() {
+		void Begin() override {
 			devcon->RSGetState(&rasterizerState);
 			devcon->OMGetDepthStencilState(&depthStencilState, &stencilRef);
 			devcon->OMGetBlendState(&blendState, blendFactor, &sampleMask);
 		}
 
-		static inline void End() {
+		void End() override {
 			// Fallback to internal shaders if unset.
 			if (!pixelShader && internalPixelShader)
 				pixelShader = internalPixelShader;
@@ -961,11 +1047,11 @@ private:
 			devcon->PSSetConstantBuffers(0, 1, &pb);
 
 			// Set textures
-			devcon->VSSetShaderResources(0, 1, &shaderResourceView0);
-			devcon->VSSetShaderResources(1, 1, &shaderResourceView1);
+			devcon->VSSetShaderResources(0, 1, &tex);
+			devcon->VSSetShaderResources(1, 1, &mask);
 
-			devcon->PSSetShaderResources(0, 1, &shaderResourceView0);
-			devcon->PSSetShaderResources(1, 1, &shaderResourceView1);
+			devcon->PSSetShaderResources(0, 1, &tex);
+			devcon->PSSetShaderResources(1, 1, &mask);
 
 			devcon->PSSetSamplers(0, 1, &ss);
 			devcon->GSSetSamplers(0, 1, &ss);
@@ -975,75 +1061,145 @@ private:
 			UINT offset = 0;
 			devcon->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
 			devcon->IASetIndexBuffer(ib, DXGI_FORMAT_R16_UINT, 0);
-			devcon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+			D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
+			switch (primitiveType) {
+			case SIRE_LINE:
+				type = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
+				break;
+			case SIRE_POINT:
+				type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
+				break;
+			case SIRE_TRIANGLE:
+				type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+				break;
+			}
+			devcon->IASetPrimitiveTopology(type);
 
 			// Draw
 			devcon->DrawIndexed(numIndices, 0, 0);
 
 			Release(renderTarget);
-			Release(shaderResourceView0);
-			Release(shaderResourceView1);
 
 			if (rasterizerState) {
 				devcon->RSSetState(rasterizerState);
-				rasterizerState->Release();
+				Release(rasterizerState);
 				depthStencilState = nullptr;
 			}
 
 			if (depthStencilState) {
 				devcon->OMSetDepthStencilState(depthStencilState, stencilRef);
-				depthStencilState->Release();
+				Release(depthStencilState);
 				depthStencilState = nullptr;
 			}
 
 			if (blendState) {
 				devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
-				blendState->Release();
+				Release(blendState);
 				blendState = nullptr;
 			}
 		}
 
-		static inline ID3D11RenderTargetView** GetRenderTargets() {
+		void SetRenderStates(tRenderState const& s) override {
+			D3D11_RASTERIZER_DESC rasterizerDesc;
+			ZeroMemory(&rasterizerDesc, sizeof(rasterizerDesc));
+			rasterizerDesc.CullMode = (D3D11_CULL_MODE)s.cullMode;
+			rasterizerDesc.FillMode = (D3D11_FILL_MODE)s.fillMode;
+			ID3D11RasterizerState* rasterizerState = nullptr;
+			dev->CreateRasterizerState(&rasterizerDesc, &rasterizerState);
+			devcon->RSSetState(rasterizerState);
+			Release(rasterizerState);
+
+			D3D11_BLEND_DESC blendDesc;
+			ZeroMemory(&blendDesc, sizeof(blendDesc));
+			blendDesc.RenderTarget[0].BlendEnable = s.blendEnable;
+			blendDesc.RenderTarget[0].SrcBlend = (D3D11_BLEND)s.srcBlend;
+			blendDesc.RenderTarget[0].DestBlend = (D3D11_BLEND)s.dstBlend;
+			blendDesc.RenderTarget[0].BlendOp = (D3D11_BLEND_OP)s.blendop;
+			blendDesc.RenderTarget[0].SrcBlendAlpha = (D3D11_BLEND)s.srcBlendAlpha;
+			blendDesc.RenderTarget[0].DestBlendAlpha = (D3D11_BLEND)s.destBlendAlpha;
+			blendDesc.RenderTarget[0].BlendOpAlpha = (D3D11_BLEND_OP)s.blendOpAlpha;
+			blendDesc.RenderTarget[0].RenderTargetWriteMask = s.renderTargetWriteMask;
+
+			ID3D11BlendState* blendState = nullptr;
+			dev->CreateBlendState(&blendDesc, &blendState);
+			float blendFactor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+			devcon->OMSetBlendState(blendState, blendFactor, s.sampleMask);
+			Release(blendState);
+		}
+
+		void CopyResource(intptr_t* dst, intptr_t* src) override {
+			devcon->CopyResource(reinterpret_cast<ID3D11Resource*>(dst), reinterpret_cast<ID3D11Resource*>(src));
+		}
+
+		void SetViewport(tSireViewport const& v) {
+			D3D11_VIEWPORT vp = {};
+			vp.TopLeftX = v.x;
+			vp.TopLeftY = v.y;
+			vp.Width = v.w;
+			vp.Height = v.h;
+			vp.MinDepth = v.mind;
+			vp.MaxDepth = v.maxd;
+			devcon->RSSetViewports(1, &vp);
+		}
+
+		void SetTexture(intptr_t* texture, intptr_t* textureMask) {
+			cb.hasTex = texture ? true : false;
+			cb.hasMask = textureMask ? true : false;
+
+			tex = nullptr;
+			mask = nullptr;
+
+			if (texture)
+				tex = reinterpret_cast<ID3D11ShaderResourceView*>(texture);
+
+			if (textureMask)
+				mask = reinterpret_cast<ID3D11ShaderResourceView*>(textureMask);
+		}
+
+		// End virtual override
+
+		ID3D11RenderTargetView** GetRenderTargets() {
 			ID3D11RenderTargetView* out[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
 			devcon->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, out, nullptr);
 			return out;
 		}
 
-		static inline ID3D11RenderTargetView* GetRenderTarget() {
+		ID3D11RenderTargetView* GetRenderTarget() {
 			ID3D11RenderTargetView* out = nullptr;
 			devcon->OMGetRenderTargets(1, &out, nullptr);
 			return out;
 		}
 
-		static inline ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
+		ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
 			ID3D11Texture2D* out;
 			swapchain->GetBuffer(buffer, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&out));
 			return out;
 		}
 
-		static inline D3D11_TEXTURE2D_DESC GetDesc(ID3D11Texture2D* texture) {
+		D3D11_TEXTURE2D_DESC GetDesc(ID3D11Texture2D* texture) {
 			D3D11_TEXTURE2D_DESC out = {};
 			texture->GetDesc(&out);
 			return out;
 		}
 
-		static inline uint8_t* Lock(ID3D11Texture2D* texture) {
+		uint8_t* Lock(ID3D11Texture2D* texture) {
 			D3D11_MAPPED_SUBRESOURCE map;
 			devcon->Map(texture, 0, D3D11_MAP_READ, 0, &map);
 			return (uint8_t*)map.pData;
 		}
 
-		static inline void Unlock(ID3D11Texture2D* texture) {
+		void Unlock(ID3D11Texture2D* texture) {
 			devcon->Unmap(texture, 0);
 		}
 
-		static inline ID3D11RenderTargetView* CreateRenderTarget(ID3D11Texture2D* texture) {
+		ID3D11RenderTargetView* CreateRenderTarget(ID3D11Texture2D* texture) {
 			ID3D11RenderTargetView* out;
 			dev->CreateRenderTargetView(texture, nullptr, &out);
 			return out;
 		}
 
-		static inline ID3DBlob* CompileShader(std::string const str, const char* szEntrypoint, const char* szTarget) {
+		ID3DBlob* CompileShader(std::string const str, const char* szEntrypoint, const char* szTarget) {
 			ID3DBlob* out = nullptr;
 			ID3DBlob* outerr = nullptr;
 
@@ -1059,91 +1215,55 @@ private:
 			return out;
 		}
 
-		static inline ID3D11VertexShader* CreateVertexShader(const void* buffer, uint32_t size) {
+		ID3D11VertexShader* CreateVertexShader(const void* buffer, uint32_t size) {
 			ID3D11VertexShader* out = nullptr;
 			dev->CreateVertexShader(buffer, size, NULL, &out);
 			return out;
 		}
 
-		static inline ID3D11PixelShader* CreatePixelShader(const void* buffer, uint32_t size) {
+		ID3D11PixelShader* CreatePixelShader(const void* buffer, uint32_t size) {
 			ID3D11PixelShader* out = nullptr;
 			dev->CreatePixelShader(buffer, size, NULL, &out);
 			return out;
 		}
 
-		static inline ID3D11InputLayout* CreateInputLayout(std::vector<D3D11_INPUT_ELEMENT_DESC>* layout, const void* buffer, uint32_t size) {
+		ID3D11InputLayout* CreateInputLayout(std::vector<D3D11_INPUT_ELEMENT_DESC>* layout, const void* buffer, uint32_t size) {
 			ID3D11InputLayout* out = nullptr;
 			dev->CreateInputLayout(layout->data(), layout->size(), buffer, size, &out);
 			return out;
 		}
 
-		static inline ID3D11ShaderResourceView* CreateShaderResourceView(ID3D11Texture2D* texture) {
+		ID3D11ShaderResourceView* CreateShaderResourceView(ID3D11Texture2D* texture) {
 			ID3D11ShaderResourceView* out = nullptr;
 			dev->CreateShaderResourceView(texture, nullptr, &out);
 			return out;
 		}
 
-		static inline void CopyResource(ID3D11Resource* dst, ID3D11Resource* src) {
-			devcon->CopyResource(dst, src);
-		}
-
-		static inline void CopySubresourceRegion(ID3D11Resource* dst, ID3D11Resource* src, uint32_t i) {
-			devcon->CopySubresourceRegion(dst, i, 0, 0, 0, src, 0, nullptr);
-		}
-
-		static void SetRenderState() {
-			D3D11_RASTERIZER_DESC rasterizerDesc;
-			ZeroMemory(&rasterizerDesc, sizeof(rasterizerDesc));
-			rasterizerDesc.CullMode = (D3D11_CULL_MODE)states.cullMode;
-			rasterizerDesc.FillMode = (D3D11_FILL_MODE)states.fillMode;
-			ID3D11RasterizerState* rasterizerState = nullptr;
-			dev->CreateRasterizerState(&rasterizerDesc, &rasterizerState);
-			devcon->RSSetState(rasterizerState);
-			rasterizerState->Release();
-
-			D3D11_BLEND_DESC blendDesc;
-			ZeroMemory(&blendDesc, sizeof(blendDesc));
-			blendDesc.RenderTarget[0].BlendEnable = states.blendEnable;
-			blendDesc.RenderTarget[0].SrcBlend = (D3D11_BLEND)states.srcBlend;
-			blendDesc.RenderTarget[0].DestBlend = (D3D11_BLEND)states.dstBlend;
-			blendDesc.RenderTarget[0].BlendOp = (D3D11_BLEND_OP)states.blendop;
-			blendDesc.RenderTarget[0].SrcBlendAlpha = (D3D11_BLEND)states.srcBlendAlpha;
-			blendDesc.RenderTarget[0].DestBlendAlpha = (D3D11_BLEND)states.destBlendAlpha;
-			blendDesc.RenderTarget[0].BlendOpAlpha = (D3D11_BLEND_OP)states.blendOpAlpha;
-			blendDesc.RenderTarget[0].RenderTargetWriteMask = states.renderTargetWriteMask;
-
-			ID3D11BlendState* blendState = nullptr;
-			dev->CreateBlendState(&blendDesc, &blendState);
-			float blendFactor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-			devcon->OMSetBlendState(blendState, blendFactor, states.sampleMask);
-			blendState->Release();
-		}
-
-		static inline ID3D11BlendState* GetBlendState(float* blendFactor, uint32_t* sampleMask) {
+		ID3D11BlendState* GetBlendState(float* blendFactor, uint32_t* sampleMask) {
 			ID3D11BlendState* out;
 			devcon->OMGetBlendState(&out, blendFactor, sampleMask);
 			return out;
 		}
 
-		static inline D3D11_BLEND_DESC GetBlendDesc(ID3D11BlendState* blendState) {
+		D3D11_BLEND_DESC GetBlendDesc(ID3D11BlendState* blendState) {
 			D3D11_BLEND_DESC out;
 			blendState->GetDesc(&out);
 			return out;
 		}
 
-		static inline void SetBlendState(D3D11_BLEND_DESC* blendStateDesc, float* blendFactor, uint32_t sampleMask) {
+		void SetBlendState(D3D11_BLEND_DESC* blendStateDesc, float* blendFactor, uint32_t sampleMask) {
 			ID3D11BlendState* blendState = nullptr;
 			dev->CreateBlendState(blendStateDesc, &blendState);
 			devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
-			blendState->Release();
+			Release(blendState);
 		}
 
-		static inline void SetShaders(ID3D11VertexShader* v, ID3D11PixelShader* p) {
+		void SetShaders(ID3D11VertexShader* v, ID3D11PixelShader* p) {
 			vertexShader = v;
 			pixelShader = p;
 		}
 
-		static inline D3D11_VIEWPORT GetViewPort() {
+		D3D11_VIEWPORT GetViewport() {
 			uint32_t numViewport = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
 			D3D11_VIEWPORT out[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
 
@@ -1151,27 +1271,8 @@ private:
 			return out[0];
 		}
 
-		static inline void SetViewport(tSireViewport viewport) {
-			D3D11_VIEWPORT vp = {};
-			vp.TopLeftX = viewport.x;
-			vp.TopLeftY = viewport.y;
-			vp.Width = viewport.w;
-			vp.Height = viewport.h;
-			vp.MinDepth = viewport.mind;
-			vp.MaxDepth = viewport.maxd;
-			devcon->RSSetViewports(1, &vp);
-		}
-
-		static inline void SetTexture(ID3D11Texture2D* texture, ID3D11Texture2D* textureMask) {
-			cb.hasTex = texture ? true : false;
-			cb.hasMask = textureMask ? true : false;
-
-			shaderResourceView0 = CreateShaderResourceView(texture);
-			shaderResourceView1 = CreateShaderResourceView(textureMask);
-		}
-
-		static inline ID3D11Texture2D* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels) {
-			ID3D11Texture2D* texture = nullptr;
+		ID3D11Texture2D* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels) {
+			ID3D11Texture2D* out = nullptr;
 			D3D11_TEXTURE2D_DESC desc;
 			ZeroMemory(&desc, sizeof(desc));
 			desc.Width = width;
@@ -1185,39 +1286,55 @@ private:
 			desc.CPUAccessFlags = 0;
 			desc.MiscFlags = 0;
 
-			dev->CreateTexture2D(&desc, nullptr, &texture);
+			dev->CreateTexture2D(&desc, nullptr, &out);
 
-			if (pixels)
-				UpdateTexture(texture, pixels);
+			if (pixels) {
+				D3D11_TEXTURE2D_DESC desc;
+				out->GetDesc(&desc);
+				devcon->UpdateSubresource(out, 0, nullptr, pixels, desc.Width * sizeof(UINT), 0);
+			}
 
-			return texture;
+			return out;
 		}
 
-		static inline void UpdateTexture(ID3D11Texture2D* texture, uint8_t* pixels) {
-			D3D11_TEXTURE2D_DESC desc;
-			texture->GetDesc(&desc);
-			devcon->UpdateSubresource(texture, 0, nullptr, pixels, desc.Width * sizeof(UINT), 0);
-		}
 	};
 
-	struct SireOpenGL {
-		static inline HDC con = nullptr;
-		static inline HGLRC conres = nullptr;
+	struct SireDirectX12 : SireRenderer {
 
-		static inline uint32_t tex = 0;
-		static inline uint32_t mask = 0;
+	};
 
-		static inline bool IsRendererActive() {
+	struct SireOpenGL : SireRenderer {
+		HDC con;
+		HGLRC conres;
+		uint32_t tex;
+		uint32_t mask;
+
+		SireOpenGL() : SireRenderer() {
+			con = nullptr;
+			conres = nullptr;
+			tex = 0;
+			mask = 0;
+		}
+
+		// Start virtual override
+		bool IsRendererActive() override {
 			const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
 			return con && conres && version;
 		}
 
-		static inline void Init(HDC hDC) {
-			con = hDC;
+		void Init(intptr_t* ptr) override {
+			if (initialised)
+				return;
+
+			con = reinterpret_cast<HDC>(ptr);
 			conres = wglCreateContext(con);
+			initialised = true;
 		}
 
-		static inline void Shutdown() {
+		void Shutdown() override {
+			if (!initialised)
+				return;
+
 			con = nullptr;
 			tex = 0;
 			mask = 0;
@@ -1226,36 +1343,19 @@ private:
 				wglDeleteContext(conres);
 				conres = nullptr;
 			}
+
+			initialised = false;
 		}
 
-		static inline void Begin() {
+		void Begin() override {
 
 		}
 
-		static inline void End() {
+		void End() override {
 			auto prevconres = wglGetCurrentContext();
 			wglMakeCurrent(con, conres);
 
 			glPushAttrib(GL_ALL_ATTRIB_BITS);
-
-
-			// Render states
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			glDisable(GL_CULL_FACE);
-			glDisable(GL_DEPTH_TEST);
-			glDisable(GL_STENCIL_TEST);
-			glDisable(GL_LIGHTING);
-			glDisable(GL_COLOR_MATERIAL);
-			glEnable(GL_SCISSOR_TEST);
-			glEnableClientState(GL_VERTEX_ARRAY);
-			glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-			glEnableClientState(GL_COLOR_ARRAY);
-			glDisableClientState(GL_NORMAL_ARRAY);
-			glEnable(GL_TEXTURE_2D);
-			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-			glShadeModel(GL_SMOOTH);
-			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
 			glMatrixMode(GL_PROJECTION);
 			glPushMatrix();
@@ -1279,6 +1379,7 @@ private:
 			glTexCoordPointer(2, GL_FLOAT, sizeof(tVertex), &vertices[0].uv0);
 			glTexCoordPointer(2, GL_FLOAT, sizeof(tVertex), &vertices[0].uv1);
 
+			glEnable(GL_TEXTURE_2D);
 			glBindTexture(GL_TEXTURE_2D, tex);
 			glBindTexture(GL_TEXTURE_2D, mask);
 
@@ -1287,7 +1388,22 @@ private:
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-			glDrawElements(GL_TRIANGLES, numIndices, GL_UNSIGNED_SHORT, &indices[0]);
+			glEnable(GL_TEXTURE_2D);
+
+			int32_t type = GL_POINTS;
+			switch (primitiveType) {
+			case SIRE_LINE:
+				type = GL_LINES;
+				break;
+			case SIRE_POINT:
+				type = GL_POINTS;
+				break;
+			case SIRE_TRIANGLE:
+				type = GL_TRIANGLES;
+				break;
+			}
+
+			glDrawElements(type, numIndices, GL_UNSIGNED_SHORT, &indices[0]);
 
 			glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 			glDisableClientState(GL_COLOR_ARRAY);
@@ -1296,30 +1412,124 @@ private:
 			glPopMatrix();
 			glPopAttrib();
 
-			glFlush(); // Flush the OpenGL commands
-
-
 			wglMakeCurrent(con, prevconres);
 		}
 
-		static inline void SetViewPort(tSireViewport viewport) {
-			glViewport((int32_t)viewport.x, (int32_t)viewport.y, (int32_t)viewport.w, (int32_t)viewport.h);
+		void SetVertices(tVertex const& v) override {
+
 		}
 
-		static inline tSireTexture2D GetBackBuffer(uint32_t buffer) {
+		void SetRenderStates(tRenderState const& s) override {
+			if (s.blendEnable)
+				glEnable(GL_BLEND);
+			else
+				glDisable(GL_BLEND);
+			
+			glBlendFunc(GL_SRC_ALPHA, SireToOpenGLBlendState(s.srcBlend));
+			glBlendFunc(GL_DST_ALPHA, SireToOpenGLBlendState(s.dstBlend));
+
+			glEnable(GL_CULL_FACE);
+			glCullFace(SireToOpenGLCullMode(s.cullMode));
+
+			glEnable(GL_DEPTH_TEST);
+			glDisable(GL_STENCIL_TEST);
+			glDisable(GL_LIGHTING);
+			glDisable(GL_COLOR_MATERIAL);
+			glEnable(GL_SCISSOR_TEST);
+
+			glPolygonMode(GL_FRONT_AND_BACK, SireFillMode(s.fillMode));
+			glShadeModel(GL_SMOOTH);
+			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+		}
+
+		void SetViewport(tSireViewport const& v) override {
+			glViewport(static_cast<int32_t>(v.x), static_cast<int32_t>(v.y), static_cast<int32_t>(v.w), static_cast<int32_t>(v.h));
+		}
+
+		void CopyResource(intptr_t* dst, intptr_t* src) override {
+
+		}
+
+		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+			tex = texture ? *texture : 0;
+			mask = textureMask ? *textureMask : 0;
+		}
+
+		// End virtual override
+		uint32_t SireFillMode(int8_t mode) {
+			switch (mode) {
+			case SIRE_FILL_WIREFRAME:
+				return GL_LINE;
+			case SIRE_FILL_SOLID:
+				return GL_FILL;
+			}
+		}
+
+		uint32_t SireToOpenGLCullMode(int8_t mode) {
+			switch (mode) {
+				case SIRE_CULL_NONE:
+					glDisable(GL_CULL_FACE);
+					return 0;
+				case SIRE_CULL_FRONT:
+					return GL_FRONT;
+				case SIRE_CULL_BACK:
+					return GL_BACK;
+			}
+		}
+
+		uint32_t SireToOpenGLBlendState(int8_t blend) {
+			switch (blend) {
+			case SIRE_BLEND_ZERO:
+				return GL_ZERO;
+			case SIRE_BLEND_ONE:
+				return GL_ONE;
+			case SIRE_BLEND_SRC_COLOR:
+				return GL_SRC_COLOR;
+			case SIRE_BLEND_INV_SRC_COLOR:
+				return GL_ONE_MINUS_SRC_COLOR;
+			case SIRE_BLEND_SRC_ALPHA:
+				return GL_SRC_ALPHA;
+			case SIRE_BLEND_INV_SRC_ALPHA:
+				return GL_ONE_MINUS_SRC_ALPHA;
+			case SIRE_BLEND_DEST_ALPHA:
+				return GL_DST_ALPHA;
+			case SIRE_BLEND_INV_DEST_ALPHA:
+				return GL_ONE_MINUS_DST_ALPHA;
+			case SIRE_BLEND_DEST_COLOR:
+				return GL_DST_COLOR;
+			case SIRE_BLEND_INV_DEST_COLOR:
+				return GL_ONE_MINUS_DST_COLOR;
+			case SIRE_BLEND_SRC_ALPHA_SAT:
+				return GL_SRC_ALPHA_SATURATE;
+			//case SIRE_BLEND_BLEND_FACTOR:
+			//	return GL_CONSTANT_COLOR;
+			//case SIRE_BLEND_INV_BLEND_FACTOR:
+			//	return GL_ONE_MINUS_CONSTANT_COLOR;
+			//case SIRE_BLEND_SRC1_COLOR:
+			//	return GL_SRC1_COLOR;
+			//case SIRE_BLEND_INV_SRC1_COLOR:
+			//	return GL_ONE_MINUS_SRC1_COLOR;
+			//case SIRE_BLEND_SRC1_ALPHA:
+			//	return GL_SRC1_ALPHA;
+			//case SIRE_BLEND_INV_SRC1_ALPHA:
+			//	return GL_ONE_MINUS_SRC1_ALPHA;
+			}
+		}
+
+		tSireTexture2D GetBackBuffer(uint32_t buffer) {
 			HDC hdc = wglGetCurrentDC();
 
 			RECT windowRect;
 			GetClientRect(WindowFromDC(hdc), &windowRect);
 
-			tSireTexture2D out;
+			tSireTexture2D out = {};
 			out.w = windowRect.right - windowRect.left;
 			out.h = windowRect.bottom - windowRect.top;
 
 			return out;
 		}
 
-		static inline uint32_t* CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
+		uint32_t* CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
 			uint32_t* out = new uint32_t;
 			glGenTextures(1, out);
 			glBindTexture(GL_TEXTURE_2D, *out);
@@ -1329,7 +1539,6 @@ private:
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-
 			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 			glBindTexture(GL_TEXTURE_2D, 0);
@@ -1337,18 +1546,20 @@ private:
 			return out;
 		}
 
-		static inline void CopyResources() {
+		void CopyResources() {
 
-		}
-
-		static inline void SetTexture(uint32_t* texture, uint32_t* textureMask) {
-			tex = texture ? *texture : 0;
-			mask = textureMask ? *textureMask : 0;
 		}
 	};
 
+	struct SireVulkan : SireRenderer {
+
+
+	};
+
+
 	static inline tSireShared shared = {};
 
+	static inline eSirePrimitiveType primitiveType = SIRE_TRIANGLE;
 	static inline std::vector<tVertex> vertices = {};
 	static inline tSireFloat4 color = {};
 	static inline tSireFloat2 uv0 = {};
@@ -1356,6 +1567,13 @@ private:
 
 	static inline std::vector<uint16_t> indices = {};
 	static inline uint32_t numIndices = 0;
+
+	static inline std::array<SireRenderer*, SIRE_NUM_RENDERERS> renderers = {};
+	static inline eSireRenderer currentRenderer = SIRE_RENDERER_NULL;
+	static inline intptr_t* currentRendererMainPtr = nullptr;
+	static inline bool renderersInitialised = false;
+
+	static inline tConstBuff cb = { {}, false, false };
 
 	static inline std::string hlslShader2_0 = R"(
 	matrix proj;
@@ -1456,31 +1674,24 @@ private:
 	)";
 
 public:
-	static inline eSireRenderAPI GetCurrentAPI() {
-		return currentAPI;
+	static inline eSireRenderer const GetCurrentRenderer() {
+		return currentRenderer;
+	}
+
+	template <typename T = SireRenderer>
+	static inline T* const GetRenderers(eSireRenderer re) {
+		return reinterpret_cast<T*>(renderers.at(re));
 	}
 
 	static inline bool IsRendererActive() {
-		switch (currentAPI) {
-		case SIRE_RENDERER_DX9:
-			return SireDirectX9::IsRendererActive();
-		case SIRE_RENDERER_DX10:
-			break;
-		case SIRE_RENDERER_DX11:
-			return SireDirectX11::IsRendererActive();
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL:
-			return SireOpenGL::IsRendererActive();
-		}
-
-		return false;
+		return GetRenderers(GetCurrentRenderer())->IsRendererActive();
 	}
 
-	static inline void Begin() {
+	static inline void Begin(eSirePrimitiveType type) {
 		if (!IsRendererActive())
 			return;
 
+		primitiveType = type;
 		vertices.clear();
 		indices.clear();
 		numIndices = 0;
@@ -1489,17 +1700,7 @@ public:
 		uv0 = { 0.0f, 0.0f };
 		uv1 = { 0.0f, 0.0f };
 
-		switch (currentAPI) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::Begin();
-			break;
-		case SIRE_RENDERER_DX11:
-			SireDirectX11::Begin();
-			break;
-		case SIRE_RENDERER_OPENGL:
-			SireOpenGL::Begin();
-			break;
-		}
+		return GetRenderers(GetCurrentRenderer())->Begin();
 	}
 
 	static inline void End() {
@@ -1516,21 +1717,7 @@ public:
 			numIndices = indices.size();
 		}
 
-		switch (currentAPI) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::End();
-			break;
-		case SIRE_RENDERER_DX10:
-			break;
-		case SIRE_RENDERER_DX11:
-			SireDirectX11::End();
-			break;
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL:
-			SireOpenGL::End();
-			break;
-		}
+		return GetRenderers(GetCurrentRenderer())->End();
 	}
 
 	static inline void SetColor4f(float r, float g, float b, float a) {
@@ -1576,11 +1763,7 @@ public:
 
 		vertices.push_back(v);
 
-		switch (currentAPI) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::SetVerticesLegacy(v);
-			break;
-		}
+		return GetRenderers(GetCurrentRenderer())->SetVertices(v);
 	}
 
 	static inline void SetVertex2f(float x, float y) {
@@ -1611,119 +1794,112 @@ public:
 
 		switch (state) {
 		case SIRE_BLEND_ALPHATESTENABLE:
-			states.blendEnable = value;
+			shared.renderStates.blendEnable = value;
 			break;
 		case SIRE_BLEND_SRCBLEND:
-			states.srcBlend = value;
+			shared.renderStates.srcBlend = value;
 			break;
 		case SIRE_BLEND_DESTBLEND:
-			states.destBlendAlpha = value;
+			shared.renderStates.destBlendAlpha = value;
 			break;
 		case SIRE_BLEND_BLENDOP:
-			states.blendop = value;
+			shared.renderStates.blendop = value;
 			break;
 		case SIRE_BLEND_SRCBLENDALPHA:
-			states.srcBlendAlpha = value;
+			shared.renderStates.srcBlendAlpha = value;
 			break;
 		case SIRE_BLEND_DESTBLENDALPHA:
-			states.destBlendAlpha = value;
+			shared.renderStates.destBlendAlpha = value;
 			break;
 		case SIRE_BLEND_BLENDOPALPHA:
-			states.blendOpAlpha = value;
+			shared.renderStates.blendOpAlpha = value;
 			break;
 		case SIRE_BLEND_WRITEMASK:
-			states.renderTargetWriteMask = value;
+			shared.renderStates.renderTargetWriteMask = value;
 			break;
 		case SIRE_BLEND_CULLMODE:
-			states.cullMode = value;
+			shared.renderStates.cullMode = value;
 			break;
 		case SIRE_BLEND_FILLMODE:
-			states.fillMode = value;
+			shared.renderStates.fillMode = value;
 			break;
 		case SIRE_BLEND_STENCILENABLE:
-			states.stencilEnable = value;
+			shared.renderStates.stencilEnable = value;
 			break;
 		case SIRE_BLEND_COLORWRITEENABLE:
-			states.sampleMask = value;
+			shared.renderStates.sampleMask = value;
 			break;
 		}
 
-		switch (currentAPI) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::SetRenderState();
-			break;
-		case SIRE_RENDERER_DX10:
-			break;
-		case SIRE_RENDERER_DX11:
-			SireDirectX11::SetRenderState();
-			break;
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL:
-			break;
-		}
+		return GetRenderers(GetCurrentRenderer())->SetRenderStates(shared.renderStates);
 	}
 
 	template <typename T>
-	static inline void Init(eSireRenderAPI rapi, T* sc) {
-		if (currentAPI != SIRE_RENDERER_NULL)
+	static inline void Init(eSireRenderer re, T* ptr) {
+		if (currentRenderer != SIRE_RENDERER_NULL)
 			return;
 
-		switch (rapi) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::Init(reinterpret_cast<IDirect3DDevice9*>(sc));
-			break;
-		case SIRE_RENDERER_DX10:
-			break;
-		case SIRE_RENDERER_DX11:
-			SireDirectX11::Init(reinterpret_cast<IDXGISwapChain*>(sc));
-			break;
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL:
-			SireOpenGL::Init(reinterpret_cast<HDC>(sc));
-			break;
+		if (!renderersInitialised) {
+			if (!renderers.at(re)) {
+				SireRenderer* renderer = nullptr;
+
+				switch (re) {
+				case SIRE_RENDERER_NULL:
+					break;
+				case SIRE_RENDERER_DX9:
+					renderer = new SireDirectX9();
+					break;
+				case SIRE_RENDERER_DX10:
+					renderer = new SireDirectX10();
+					break;
+				case SIRE_RENDERER_DX11:
+					renderer = new SireDirectX11();
+					break;
+				case SIRE_RENDERER_DX12:
+					renderer = new SireDirectX12();
+					break;
+				case SIRE_RENDERER_OPENGL:
+					renderer = new SireOpenGL();
+					break;
+				case SIRE_RENDERER_VULKAN:
+					renderer = new SireVulkan();
+					break;
+				}
+
+				renderers.at(re) = renderer;
+			}
+			renderersInitialised = true;
 		}
 
-		currentAPI = rapi;
-		apiptr = (intptr_t*)sc;
+		currentRenderer = re;
+		currentRendererMainPtr = (intptr_t*)ptr;
+
+		return GetRenderers(GetCurrentRenderer())->Init(currentRendererMainPtr);
 	}
 
-	static inline void Shutdown(eSireRenderAPI rapi) {
-		if (currentAPI == SIRE_RENDERER_NULL)
+	static inline void Shutdown() {
+		if (currentRenderer == SIRE_RENDERER_NULL)
 			return;
 
-		switch (rapi) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::Shutdown();
-			break;
-		case SIRE_RENDERER_DX10:
-			break;
-		case SIRE_RENDERER_DX11:
-			SireDirectX11::Shutdown();
-			break;
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL:
-			SireOpenGL::Shutdown();
-			break;
+		GetRenderers(GetCurrentRenderer())->Shutdown();
+
+		if (renderersInitialised) {
+			for (auto& it : renderers) {
+				if (it) {
+					delete it;
+					it = nullptr;
+				}
+			}
+
+			renderersInitialised = false;
 		}
 
-		currentAPI = SIRE_RENDERER_NULL;
-		apiptr = nullptr;
-	}
-
-	template <typename T>
-	static inline void ReInit(T* sc) {
-		eSireRenderAPI prev = currentAPI;
-		intptr_t* prevptr = apiptr;
-
-		Shutdown(currentAPI);
-		Init(prev, sc ? sc : (T*)prevptr);
+		currentRenderer = SIRE_RENDERER_NULL;
+		currentRendererMainPtr = nullptr;
 	}
 
 	template<typename T>
-	static inline void Release(T res) {
+	static inline void Release(T* res) {
 		if (res) {
 			res->Release();
 			res = nullptr;
@@ -1736,35 +1912,32 @@ public:
 
 		tSireTexture2D* out = new tSireTexture2D();
 
-		switch (currentAPI) {
+		switch (GetCurrentRenderer()) {
 		case SIRE_RENDERER_DX9: {
-			auto result = SireDirectX9::GetBackBufferSurface(buffer);
-			auto desc = SireDirectX9::GetDesc(result);
-			out->w = desc.Width;
-			out->h = desc.Height;
-			out->format = desc.Format;
-			out->ptrs->texture = nullptr;
-			out->ptrs->surface = (intptr_t*)result;
+			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetBackBufferSurface(buffer);
+			auto desc = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetDesc(result);
+			out->Set(desc.Width, desc.Height, desc.Format, nullptr, reinterpret_cast<intptr_t*>(result));
 		} break;
 		case SIRE_RENDERER_DX10:
 			break;
 		case SIRE_RENDERER_DX11: {
-			auto result = SireDirectX11::GetBackBuffer(buffer);
-			auto desc = SireDirectX11::GetDesc(result);
-			out->w = desc.Width;
-			out->h = desc.Height;
-			out->format = desc.Format;
-			out->ptrs->texture = (intptr_t*)result;
+			auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetBackBuffer(buffer);
+
+			if (tex) {
+				auto result = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateShaderResourceView(tex);
+				auto desc = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetDesc(tex);
+
+				if (tex) {
+					out->Set(desc.Width, desc.Height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
+				}
+			}
 		} break;
 		case SIRE_RENDERER_DX12:
 			break;
-		case SIRE_RENDERER_OPENGL:
-			auto result = SireOpenGL::GetBackBuffer(buffer);
-			out->w = result.w;
-			out->h = result.h;
-			out->format = result.format;
-			out->ptrs->texture = result.ptrs->texture;
-			break;
+		case SIRE_RENDERER_OPENGL: {
+			auto result = GetRenderers<SireOpenGL>(GetCurrentRenderer())->GetBackBuffer(buffer);
+			out->Set(result.w, result.h, result.format, reinterpret_cast<intptr_t*>(result.ptrs->texture), reinterpret_cast<intptr_t*>(result.ptrs->texture));
+		} break;
 		}
 
 		return out;
@@ -1776,33 +1949,33 @@ public:
 
 		tSireTexture2D* out = new tSireTexture2D();
 
-		switch (currentAPI) {
+		switch (GetCurrentRenderer()) {
 		case SIRE_RENDERER_DX9: {
 			IDirect3DSurface9* sout = nullptr;
-			auto result = SireDirectX9::CreateTexture(width, height, pixels, &sout);
-			out->w = width;
-			out->h = height;
-			out->format = 0;
-			out->ptrs->texture = (intptr_t*)result;
-			out->ptrs->surface = (intptr_t*)sout;
+			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->CreateTexture(width, height, pixels, &sout);
+
+			if (result)
+				out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(sout));
 		} break;
 		case SIRE_RENDERER_DX10:
 			break;
 		case SIRE_RENDERER_DX11: {
-			auto result = SireDirectX11::CreateTexture(width, height, pixels);
-			out->w = width;
-			out->h = height;
-			out->format = 0;
-			out->ptrs->texture = (intptr_t*)result;
+			auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
+
+			if (tex) {
+				auto result = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateShaderResourceView(tex);
+
+				if (result)
+					out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
+			}
 		} break;
 		case SIRE_RENDERER_DX12:
 			break;
 		case SIRE_RENDERER_OPENGL:
-			auto result = SireOpenGL::CreateTexture(width, height, pixels);
-			out->w = width;
-			out->h = height;
-			out->format = 0;
-			out->ptrs->texture = (intptr_t*)result;
+			auto result = GetRenderers<SireOpenGL>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
+
+			if (result)
+				out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(result));
 			break;
 		}
 
@@ -1818,21 +1991,7 @@ public:
 		shared.viewport.w = w;
 		shared.viewport.h = h;
 
-		switch (currentAPI) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::SetViewport(shared.viewport);
-			break;
-		case SIRE_RENDERER_DX10:
-			break;
-		case SIRE_RENDERER_DX11:
-			SireDirectX11::SetViewport(shared.viewport);
-			break;
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL:
-			SireOpenGL::SetViewPort(shared.viewport);
-			break;
-		}
+		return GetRenderers(GetCurrentRenderer())->SetViewport(shared.viewport);
 	}
 
 	static inline void CopyResource(tSireTexture2D* dst, tSireTexture2D* src) {
@@ -1843,20 +2002,7 @@ public:
 		dst->h = src->h;
 		dst->format = src->format;
 
-		switch (currentAPI) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::CopyResource((IDirect3DSurface9*)dst->ptrs->surface, (IDirect3DSurface9*)src->ptrs->surface);
-			break;
-		case SIRE_RENDERER_DX10:
-			break;
-		case SIRE_RENDERER_DX11:
-			SireDirectX11::CopyResource((ID3D11Texture2D*)dst->ptrs->texture, (ID3D11Texture2D*)src->ptrs->texture);
-			break;
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL:
-			break;
-		}
+		return GetRenderers(GetCurrentRenderer())->CopyResource(dst->ptrs->surface, src->ptrs->surface);
 	}
 
 	static inline void SetProjectionMode(eSireProjection proj) {
@@ -1889,28 +2035,14 @@ public:
 		if (mask)
 			tex1 = mask->ptrs->texture;
 
-		switch (currentAPI) {
-		case SIRE_RENDERER_DX9:
-			SireDirectX9::SetTexture((IDirect3DTexture9*)tex0, (IDirect3DTexture9*)tex1);
-			break;
-		case SIRE_RENDERER_DX10:
-			break;
-		case SIRE_RENDERER_DX11:
-			SireDirectX11::SetTexture((ID3D11Texture2D*)tex0, (ID3D11Texture2D*)tex1);
-			break;
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL:
-			SireOpenGL::SetTexture((uint32_t*)tex0, (uint32_t*)tex1);
-			break;
-		}
+		return GetRenderers(GetCurrentRenderer())->SetTexture(tex0, tex1);
 	}
 
 	static inline void DrawRect(tSireFloat4 const& rect) {
 		if (!IsRendererActive())
 			return;
 
-		Sire::Begin();
+		Sire::Begin(SIRE_TRIANGLE);
 		Sire::SetVertex2f(rect.x, rect.y);
 		Sire::SetVertex2f(rect.z, rect.y);
 		Sire::SetVertex2f(rect.z, rect.w);
