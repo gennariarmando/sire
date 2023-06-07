@@ -1,9 +1,10 @@
 #pragma once
 #define SIRE_INCLUDE_DX9
-//#define SIRE_INCLUDE_DX10
+#define SIRE_INCLUDE_DX10
 #define SIRE_INCLUDE_DX11
-#define SIRE_INCLUDE_DX12
-#define SIRE_INCLUDE_OPENGL
+//#define SIRE_INCLUDE_DX12
+//#define SIRE_INCLUDE_OPENGL
+//#define SIRE_INCLUDE_VULKAN
 
 #include <iostream>
 #include <vector>
@@ -18,15 +19,22 @@
 #endif
 
 #ifdef SIRE_INCLUDE_DX10
+#include <d3d10_1.h>
 #include <d3d10.h>
 #include <dxgi.h>
 #include <DirectXMath.h>
+#pragma comment(lib, "d3d10_1.lib"
+#pragma comment(lib, "d3d10.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "d3dcompiler.lib")
 #endif
 
 #ifdef SIRE_INCLUDE_DX11
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 #endif
 
@@ -34,13 +42,26 @@
 #include <d3d12.h>
 #include <dxgi.h>
 #include <DirectXMath.h>
+#pragma comment(lib, "d3d12.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "d3dcompiler.lib")
 #endif
 
 #ifdef SIRE_INCLUDE_OPENGL
-#include <gl/GL.h>
-#include <gl/GLU.h>
+#define SOGL_MAJOR_VERSION 4
+#define SOGL_MINOR_VERSION 5
+#define SOGL_OVR_multiview
+#define SOGL_KHR_parallel_shader_compile
+#define SOGL_IMPLEMENTATION_WIN32
+#include "glad/include/glad/glad.h"
+#include "glad/include/KHR/khrplatform.h"
 #pragma comment(lib, "opengl32.lib")
-#pragma comment(lib, "glu32.lib")
+#endif
+
+#ifdef SIRE_INCLUDE_VULKAN
+#define VK_USE_PLATFORM_WIN32_KHR
+#include <vulkan/vulkan.h>
+#pragma comment(lib, "vulkan-1.lib")
 #endif
 
 class Sire {
@@ -107,12 +128,24 @@ public:
 
 	enum eSireRenderer {
 		SIRE_RENDERER_NULL = -1,
+#ifdef SIRE_INCLUDE_DX9
 		SIRE_RENDERER_DX9,
+#endif
+#ifdef SIRE_INCLUDE_DX10
 		SIRE_RENDERER_DX10,
+#endif
+#ifdef SIRE_INCLUDE_DX11
 		SIRE_RENDERER_DX11,
+#endif
+#ifdef SIRE_INCLUDE_DX12
 		SIRE_RENDERER_DX12,
+#endif
+#ifdef SIRE_INCLUDE_OPENGL
 		SIRE_RENDERER_OPENGL,
+#endif
+#ifdef SIRE_INCLUDE_VULKAN
 		SIRE_RENDERER_VULKAN,
+#endif
 		SIRE_NUM_RENDERERS,
 	};
 
@@ -134,12 +167,15 @@ public:
 		int32_t w;
 		int32_t h;
 		int32_t format;
+		int32_t swapColors;
 
 		struct tSirePtrsHolder {
 			intptr_t* texture;
 			intptr_t* surface;
+			eSireRenderer owner;
 
 			tSirePtrsHolder() {
+				owner = GetCurrentRenderer();
 				texture = nullptr;
 				surface = nullptr;
 			}
@@ -149,21 +185,17 @@ public:
 			}
 
 			void Release() {
-				switch (GetCurrentRenderer()) {
-				case SIRE_RENDERER_DX9:
-					Sire::Release((IDirect3DTexture9*)texture);
-					Sire::Release((IDirect3DSurface9*)surface);
-					break;
-				case SIRE_RENDERER_DX11:
-					Sire::Release((ID3D11ShaderResourceView*)texture);
-					Sire::Release((ID3D11Texture2D*)surface);
-					break;
-				case SIRE_RENDERER_OPENGL:
-					if (texture) {
-						glDeleteTextures(1, (uint32_t*)texture);
-						delete texture;
+				if (GetCurrentRenderer() == owner) {
+					switch (GetCurrentRenderer()) {
+					case SIRE_RENDERER_DX9:
+						Sire::Release((IDirect3DTexture9*)texture);
+						Sire::Release((IDirect3DSurface9*)surface);
+						break;
+					case SIRE_RENDERER_DX11:
+						Sire::Release((ID3D11ShaderResourceView*)texture);
+						Sire::Release((ID3D11Texture2D*)surface);
+						break;
 					}
-					break;
 				}
 
 				texture = nullptr;
@@ -177,6 +209,7 @@ public:
 			h = 0;
 			format = 0;
 			ptrs = std::make_unique<tSirePtrsHolder>();
+			swapColors = 0;
 		}
 
 		void Set(int32_t width, int32_t height, int32_t format, intptr_t* tex, intptr_t* surf) {
@@ -185,10 +218,6 @@ public:
 			this->format = format;
 			this->ptrs->texture = tex;
 			this->ptrs->surface = surf;
-		}
-
-		void Release() {
-			delete this;
 		}
 	};
 
@@ -336,8 +365,8 @@ private:
 			return out;
 		}
 
-		std::array<GLfloat, 16> ToFloatArray() {
-			std::array<GLfloat, 16> out = {};
+		std::array<float, 16> ToFloatArray() {
+			std::array<float, 16> out = {};
 
 			out[0] = _11;
 			out[1] = _21;
@@ -367,6 +396,7 @@ private:
 		tSireMatrix matrix;
 		int32_t hasTex;
 		int32_t hasMask;
+		int32_t swapColors;
 	};
 
 	struct tVertex {
@@ -414,6 +444,7 @@ private:
 
 	struct SireRenderer {
 		bool initialised;
+		HWND hWnd;
 
 		virtual bool IsRendererActive() { return false; }
 		virtual void Init(intptr_t* ptr) {}
@@ -425,9 +456,13 @@ private:
 		virtual void SetViewport(tSireViewport const& v) {}
 		virtual void CopyResource(intptr_t* dst, intptr_t* src) {}
 		virtual void SetTexture(intptr_t* tex, intptr_t* mask) {}
+		virtual HWND GetWindow() { return hWnd; }
+		virtual uint8_t* Lock(void* ptr) { return nullptr; }
+		virtual void Unlock(void* ptr) {}
 
 		SireRenderer() {
 			initialised = false;
+			hWnd = nullptr;
 		}
 
 		bool operator==(const SireRenderer& other) const {
@@ -490,10 +525,19 @@ private:
 
 			dev = reinterpret_cast<IDirect3DDevice9*>(d);
 
+			IDirect3DSwapChain9* swapchain = nullptr;
+			dev->GetSwapChain(0, &swapchain);
+
+			D3DPRESENT_PARAMETERS presentParams;
+			ZeroMemory(&presentParams, sizeof(presentParams));
+			swapchain->GetPresentParameters(&presentParams);
+
+			hWnd = presentParams.hDeviceWindow;
+
 			dev->CreateVertexBuffer(sizeof(tVertexLegacy) * 65536, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
 				0, D3DPOOL_DEFAULT, &vb, nullptr);
 
-			dev->CreateIndexBuffer(sizeof(tVertexLegacy) * 65536, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
+			dev->CreateIndexBuffer(sizeof(uint16_t) * 65536, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
 				D3DFMT_INDEX16, D3DPOOL_DEFAULT, &ib, nullptr);
 
 			// Init shaders
@@ -574,27 +618,33 @@ private:
 			pct->SetInt(dev, pct->GetConstantByName(NULL, "hasMask"), tempcb.hasMask);
 			pct->SetInt(dev, vct->GetConstantByName(NULL, "hasMask"), tempcb.hasMask);
 
+			pct->SetInt(dev, pct->GetConstantByName(NULL, "swapColors"), tempcb.swapColors);
+			pct->SetInt(dev, vct->GetConstantByName(NULL, "swapColors"), tempcb.swapColors);
+
 			auto renderTarget = GetRenderTarget();
 			dev->SetRenderTarget(0, renderTarget);
 
 			dev->SetVertexDeclaration(vertexDeclaration);
 
-			dev->SetTexture(0, tex);	
+			dev->SetTexture(0, tex);
 			dev->SetTexture(1, mask);
 
 			dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
 			dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
 			dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
 			dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-			
+
 			dev->SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
 			dev->SetSamplerState(1, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
 			dev->SetSamplerState(1, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
 			dev->SetSamplerState(1, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 
+			dev->SetRenderState(D3DRS_WRAP0, 0);
+			dev->SetRenderState(D3DRS_WRAP1, 0);
+
 			dev->SetPixelShader(pixelShader);
 			dev->SetVertexShader(vertexShader);
-			
+
 			dev->SetStreamSource(0, vb, 0, sizeof(tVertexLegacy));
 			dev->SetIndices(ib);
 
@@ -613,11 +663,8 @@ private:
 
 			dev->DrawIndexedPrimitive(type, 0, 0, static_cast<uint32_t>(verticesLegacy.size()), 0, numIndices / 3);
 
-			if (stateBlock) {
-				stateBlock->Apply();
-				Release(stateBlock);
-				stateBlock = nullptr;
-			}
+			stateBlock->Apply();
+			Release(stateBlock);
 		}
 		
 		void SetVertices(tVertex const& v) override {
@@ -681,6 +728,16 @@ private:
 			dev->StretchRect(reinterpret_cast<IDirect3DSurface9*>(src), nullptr, reinterpret_cast<IDirect3DSurface9*>(dst), nullptr, D3DTEXF_NONE);
 		}
 
+		uint8_t* Lock(void* ptr) override {
+			D3DLOCKED_RECT out;
+			reinterpret_cast<IDirect3DSurface9*>(ptr)->LockRect(&out, nullptr, 0);
+			return (uint8_t*)out.pBits;
+		}
+
+		void Unlock(void* ptr) override {
+			reinterpret_cast<IDirect3DSurface9*>(ptr)->UnlockRect();
+		}
+
 		// End virtual override
 
 		IDirect3DSurface9* GetRenderTarget() {
@@ -705,26 +762,6 @@ private:
 			IDirect3DSurface9* out;
 			texture->GetSurfaceLevel(level, &out);
 			return out;
-		}
-
-		uint8_t* Lock(IDirect3DTexture9* texture) {
-			D3DLOCKED_RECT out;
-			texture->LockRect(0, &out, nullptr, 0);
-			return (uint8_t*)out.pBits;
-		}
-
-		void Unlock(IDirect3DTexture9* texture) {
-			texture->UnlockRect(0);
-		}
-
-		uint8_t* Lock(IDirect3DSurface9* surface) {
-			D3DLOCKED_RECT out;
-			surface->LockRect(&out, nullptr, 0);
-			return (uint8_t*)out.pBits;
-		}
-
-		void Unlock(IDirect3DSurface9* surface) {
-			surface->UnlockRect();
 		}
 
 		ID3DXBuffer* CompileShader(const std::string& str, const char* szEntrypoint, const char* szTarget) {
@@ -838,8 +875,417 @@ private:
 	};
 
 	struct SireDirectX10 : SireRenderer {
+		IDXGISwapChain* swapchain;
+		ID3D10Device* dev;
+		ID3D10Buffer* vb;
+		ID3D10Buffer* ib;
+		ID3D10Buffer* pb;
+		ID3D10SamplerState* ss;
+		ID3D10InputLayout* inputLayout;
+		ID3D10VertexShader* vertexShader;
+		ID3D10PixelShader* pixelShader;
+		ID3D10VertexShader* internalVertexShader;
+		ID3D10PixelShader* internalPixelShader;
+		ID3D10ShaderResourceView* tex;
+		ID3D10ShaderResourceView* mask;
+		ID3D10RasterizerState* rasterizerState;
+		ID3D10DepthStencilState* depthStencilState;
+		ID3D10BlendState* blendState;
+		FLOAT blendFactor[4];
+		UINT sampleMask;
+		UINT stencilRef;
 
+		// Start virtual override
+		SireDirectX10() : SireRenderer() {
+			swapchain = nullptr;
+			dev = nullptr;
+			vb = nullptr;
+			ib = nullptr;
+			pb = nullptr;
+			ss = nullptr;
+			inputLayout = nullptr;
+			vertexShader = nullptr;
+			pixelShader = nullptr;
+			internalVertexShader = nullptr;
+			internalPixelShader = nullptr;
+			tex = nullptr;
+			mask = nullptr;
+			rasterizerState = nullptr;
+			depthStencilState = nullptr;
+			blendState = nullptr;
+			blendFactor[0] = 0.0f;
+			blendFactor[1] = 0.0f;
+			blendFactor[2] = 0.0f;
+			blendFactor[3] = 0.0f;
+			sampleMask = 0;
+			stencilRef = 0;
+		}
 
+		bool IsRendererActive() override {
+			if (!initialised || !swapchain || !dev)
+				return false;
+
+			DXGI_SWAP_CHAIN_DESC desc;
+			HRESULT hr = swapchain->GetDesc(&desc);
+
+			return SUCCEEDED(hr) && desc.BufferCount > 0;
+		}
+
+		void Init(intptr_t* ptr) override {
+			if (initialised)
+				return;
+
+			swapchain = reinterpret_cast<IDXGISwapChain*>(ptr);
+			HRESULT hResult = swapchain->GetDevice(__uuidof(ID3D11Device), (void**)&dev);
+
+			if (FAILED(hResult))
+				return;
+
+			D3D10_BUFFER_DESC bufferDesc;
+			ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+
+			bufferDesc.Usage = D3D10_USAGE_DYNAMIC;
+			bufferDesc.BindFlags = D3D10_BIND_VERTEX_BUFFER;
+			bufferDesc.CPUAccessFlags = D3D10_CPU_ACCESS_WRITE;
+			bufferDesc.MiscFlags = 0;
+			bufferDesc.ByteWidth = sizeof(tVertex) * 65536;
+
+			// Vertex buffer
+			dev->CreateBuffer(&bufferDesc, nullptr, &vb);
+
+			// Index buffer
+			bufferDesc.ByteWidth = sizeof(uint16_t) * 65536;
+			bufferDesc.BindFlags = D3D10_BIND_INDEX_BUFFER;
+			dev->CreateBuffer(&bufferDesc, nullptr, &ib);
+
+			// Constant buffer
+			bufferDesc.BindFlags = D3D10_BIND_CONSTANT_BUFFER;
+			bufferDesc.ByteWidth = sizeof(tConstBuff);
+
+			D3D10_SUBRESOURCE_DATA initData;
+			ZeroMemory(&initData, sizeof(initData));
+			initData.pSysMem = &cb;
+			dev->CreateBuffer(&bufferDesc, &initData, &pb);
+
+			D3D10_SAMPLER_DESC samplerDesc;
+			ZeroMemory(&samplerDesc, sizeof(samplerDesc));
+			samplerDesc.Filter = D3D10_FILTER_MIN_MAG_MIP_LINEAR;
+			samplerDesc.AddressU = D3D10_TEXTURE_ADDRESS_WRAP;
+			samplerDesc.AddressV = D3D10_TEXTURE_ADDRESS_WRAP;
+			samplerDesc.AddressW = D3D10_TEXTURE_ADDRESS_WRAP;
+			samplerDesc.MipLODBias = 0.0f;
+			samplerDesc.MaxAnisotropy = 1;
+			samplerDesc.ComparisonFunc = D3D10_COMPARISON_NEVER;
+			samplerDesc.BorderColor[0] = 0.0f;
+			samplerDesc.BorderColor[1] = 0.0f;
+			samplerDesc.BorderColor[2] = 0.0f;
+			samplerDesc.BorderColor[3] = 0.0f;
+			samplerDesc.MinLOD = 0;
+			samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+			dev->CreateSamplerState(&samplerDesc, &ss);
+
+			// Init shaders
+			ID3DBlob* VS = CompileShader(hlslShader5_0, "VShader", "vs_4_0");
+			ID3DBlob* PS = CompileShader(hlslShader5_0, "PShader", "ps_4_0");
+
+			internalVertexShader = CreateVertexShader(VS->GetBufferPointer(), VS->GetBufferSize());
+			internalPixelShader = CreatePixelShader(PS->GetBufferPointer(), PS->GetBufferSize());
+
+			// Init input layout
+			std::vector<D3D10_INPUT_ELEMENT_DESC> layout = {
+				{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D10_INPUT_PER_VERTEX_DATA, 0 },
+				{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D10_INPUT_PER_VERTEX_DATA, 0 },
+				{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D10_INPUT_PER_VERTEX_DATA, 0 },
+				{ "TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D10_INPUT_PER_VERTEX_DATA, 0 },
+			};
+
+			inputLayout = CreateInputLayout(&layout, VS->GetBufferPointer(), VS->GetBufferSize());
+
+			Release(VS);
+			Release(PS);
+
+			initialised = true;
+		}
+
+		void Shutdown() override {
+			if (!initialised)
+				return;
+
+			Release(vb);
+			Release(ib);
+			Release(pb);
+			Release(ss);
+			Release(inputLayout);
+			Release(internalVertexShader);
+			Release(internalPixelShader);
+
+			vertexShader = nullptr;
+			pixelShader = nullptr;
+
+			swapchain = nullptr;
+			dev = nullptr;
+
+			initialised = false;
+		}
+
+		void Begin() override {
+			dev->RSGetState(&rasterizerState);
+			dev->OMGetDepthStencilState(&depthStencilState, &stencilRef);
+			dev->OMGetBlendState(&blendState, blendFactor, &sampleMask);
+		}
+
+		void End() override {
+			// Fallback to internal shaders if unset.
+			if (!pixelShader && internalPixelShader)
+				pixelShader = internalPixelShader;
+
+			if (!vertexShader && internalVertexShader)
+				vertexShader = internalVertexShader;
+
+			// Update index/vertex buffers
+			void* out;
+			vb->Map(D3D10_MAP_WRITE_DISCARD, 0, &out);
+			memcpy(out, vertices.data(), vertices.size() * sizeof(tVertex));
+			vb->Unmap();
+
+			ib->Map(D3D10_MAP_WRITE_DISCARD, 0, &out);
+			memcpy(out, indices.data(), numIndices * sizeof(uint16_t));
+			ib->Unmap();
+
+			// Update
+			tConstBuff tempcb = cb;
+			tempcb.matrix.Transpose();
+
+			pb->Map(D3D10_MAP_WRITE_DISCARD, 0, &out);
+			memcpy(out, &tempcb, sizeof(tempcb));
+			pb->Unmap();
+
+			dev->IASetInputLayout(inputLayout);
+
+			auto renderTarget = GetRenderTarget();
+			dev->OMSetRenderTargets(1, &renderTarget, nullptr);
+
+			dev->VSSetShader(vertexShader);
+			dev->PSSetShader(pixelShader);
+
+			dev->VSSetConstantBuffers(0, 1, &pb);
+			dev->PSSetConstantBuffers(0, 1, &pb);
+
+			// Set textures
+			dev->VSSetShaderResources(0, 1, &tex);
+			dev->VSSetShaderResources(1, 1, &mask);
+
+			dev->PSSetShaderResources(0, 1, &tex);
+			dev->PSSetShaderResources(1, 1, &mask);
+
+			dev->PSSetSamplers(0, 1, &ss);
+			dev->GSSetSamplers(0, 1, &ss);
+
+			// Set index/vertex buffers
+			UINT stride = sizeof(tVertex);
+			UINT offset = 0;
+			dev->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+			dev->IASetIndexBuffer(ib, DXGI_FORMAT_R16_UINT, 0);
+
+			D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
+			switch (primitiveType) {
+			case SIRE_LINE:
+				type = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
+				break;
+			case SIRE_POINT:
+				type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
+				break;
+			case SIRE_TRIANGLE:
+				type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+				break;
+			}
+			dev->IASetPrimitiveTopology(type);
+
+			// Draw
+			dev->DrawIndexed(numIndices, 0, 0);
+
+			Release(renderTarget);
+
+			if (rasterizerState) {
+				dev->RSSetState(rasterizerState);
+				Release(rasterizerState);
+				depthStencilState = nullptr;
+			}
+
+			if (depthStencilState) {
+				dev->OMSetDepthStencilState(depthStencilState, stencilRef);
+				Release(depthStencilState);
+				depthStencilState = nullptr;
+			}
+
+			if (blendState) {
+				dev->OMSetBlendState(blendState, blendFactor, sampleMask);
+				Release(blendState);
+				blendState = nullptr;
+			}
+		}
+
+		void SetVertices(tVertex const& v) override {
+
+		}
+
+		void SetRenderStates(tRenderState const& s) override {
+
+		}
+
+		void SetViewport(tSireViewport const& v) override {
+
+		}
+
+		void CopyResource(intptr_t* dst, intptr_t* src) override {
+
+		}
+
+		void SetTexture(intptr_t* tex, intptr_t* mask) override {
+
+		}
+
+		uint8_t* Lock(void* ptr) {
+			D3D10_MAPPED_TEXTURE2D map;
+			reinterpret_cast<ID3D10Texture2D*>(ptr)->Map(0, D3D10_MAP_READ, 0, &map);
+			return (uint8_t*)map.pData;
+		}
+
+		void Unlock(void* ptr) {
+			reinterpret_cast<ID3D10Texture2D*>(ptr)->Unmap(0);
+		}
+
+		// End virtual override	
+
+		ID3D10RenderTargetView** GetRenderTargets() {
+			ID3D10RenderTargetView* out[D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			dev->OMGetRenderTargets(D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT, out, nullptr);
+			return out;
+		}
+
+		ID3D10RenderTargetView* GetRenderTarget() {
+			ID3D10RenderTargetView* out = nullptr;
+			dev->OMGetRenderTargets(1, &out, nullptr);
+			return out;
+		}
+
+		ID3D10Texture2D* GetBackBuffer(uint32_t buffer) {
+			ID3D10Texture2D* out = nullptr;
+			swapchain->GetBuffer(buffer, __uuidof(ID3D10Texture2D), reinterpret_cast<void**>(&out));
+			return out;
+		}
+
+		D3D10_TEXTURE2D_DESC GetDesc(ID3D10Texture2D* texture) {
+			D3D10_TEXTURE2D_DESC out = {};
+			texture->GetDesc(&out);
+			return out;
+		}
+
+		ID3D10RenderTargetView* CreateRenderTarget(ID3D10Texture2D* texture) {
+			ID3D10RenderTargetView* out;
+			dev->CreateRenderTargetView(texture, nullptr, &out);
+			return out;
+		}
+
+		ID3DBlob* CompileShader(std::string const str, const char* szEntrypoint, const char* szTarget) {
+			ID3DBlob* out = nullptr;
+			ID3DBlob* outerr = nullptr;
+
+			auto hr = D3DCompile(str.c_str(), str.length(), 0, nullptr, nullptr, szEntrypoint, szTarget, D3DCOMPILE_ENABLE_STRICTNESS, 0, &out, &outerr);
+			if (FAILED(hr)) {
+				if (outerr) {
+					char szError[256]{ 0 };
+					memcpy(szError, outerr->GetBufferPointer(), outerr->GetBufferSize());
+					MessageBoxA(nullptr, szError, "Error", MB_OK);
+				}
+				return outerr;
+			}
+			return out;
+		}
+
+		ID3D10VertexShader* CreateVertexShader(const void* buffer, size_t size) {
+			ID3D10VertexShader* out = nullptr;
+			dev->CreateVertexShader(buffer, size, &out);
+			return out;
+		}
+
+		ID3D10PixelShader* CreatePixelShader(const void* buffer, size_t size) {
+			ID3D10PixelShader* out = nullptr;
+			dev->CreatePixelShader(buffer, size, &out);
+			return out;
+		}
+
+		ID3D10InputLayout* CreateInputLayout(std::vector<D3D10_INPUT_ELEMENT_DESC>* layout, const void* buffer, size_t size) {
+			ID3D10InputLayout* out = nullptr;
+			dev->CreateInputLayout(layout->data(), static_cast<uint32_t>(layout->size()), buffer, size, &out);
+			return out;
+		}
+
+		ID3D10ShaderResourceView* CreateShaderResourceView(ID3D10Texture2D* texture) {
+			ID3D10ShaderResourceView* out = nullptr;
+			dev->CreateShaderResourceView(texture, nullptr, &out);
+			return out;
+		}
+
+		ID3D10BlendState* GetBlendState(float* blendFactor, uint32_t* sampleMask) {
+			ID3D10BlendState* out;
+			dev->OMGetBlendState(&out, blendFactor, sampleMask);
+			return out;
+		}
+
+		D3D10_BLEND_DESC GetBlendDesc(ID3D10BlendState* blendState) {
+			D3D10_BLEND_DESC out;
+			blendState->GetDesc(&out);
+			return out;
+		}
+
+		void SetBlendState(D3D10_BLEND_DESC* blendStateDesc, float* blendFactor, uint32_t sampleMask) {
+			ID3D10BlendState* blendState = nullptr;
+			dev->CreateBlendState(blendStateDesc, &blendState);
+			dev->OMSetBlendState(blendState, blendFactor, sampleMask);
+			Release(blendState);
+		}
+
+		void SetShaders(ID3D10VertexShader* v, ID3D10PixelShader* p) {
+			vertexShader = v;
+			pixelShader = p;
+		}
+
+		D3D10_VIEWPORT GetViewport() {
+			uint32_t numViewport = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+			D3D10_VIEWPORT out[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+
+			dev->RSGetViewports(&numViewport, out);
+			return out[0];
+		}
+
+		ID3D10Texture2D* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels) {
+			ID3D10Texture2D* out = nullptr;
+			D3D10_TEXTURE2D_DESC desc;
+			ZeroMemory(&desc, sizeof(desc));
+			desc.Width = width;
+			desc.Height = height;
+			desc.MipLevels = 1;
+			desc.ArraySize = 1;
+			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.SampleDesc.Count = 1;
+			desc.Usage = D3D10_USAGE_DEFAULT;
+			desc.BindFlags = D3D10_BIND_SHADER_RESOURCE;
+			desc.CPUAccessFlags = 0;
+			desc.MiscFlags = 0;
+
+			HRESULT hr = dev->CreateTexture2D(&desc, nullptr, &out);
+
+			if (SUCCEEDED(hr)) {
+				if (pixels) {
+					D3D10_TEXTURE2D_DESC desc;
+					out->GetDesc(&desc);
+					dev->UpdateSubresource(out, 0, nullptr, pixels, desc.Width * sizeof(UINT), 0);
+				}
+			}
+
+			return out;
+		}
 	};
 
 	struct SireDirectX11 : SireRenderer {
@@ -913,6 +1359,12 @@ private:
 
 			dev->GetImmediateContext(&devcon);
 
+			DXGI_SWAP_CHAIN_DESC swapChainDesc;
+			ZeroMemory(&swapChainDesc, sizeof(swapChainDesc));
+			swapchain->GetDesc(&swapChainDesc);
+
+			hWnd = swapChainDesc.OutputWindow;
+
 			D3D11_BUFFER_DESC bufferDesc;
 			ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 
@@ -963,8 +1415,7 @@ private:
 			internalPixelShader = CreatePixelShader(PS->GetBufferPointer(), PS->GetBufferSize());
 
 			// Init input layout
-			std::vector<D3D11_INPUT_ELEMENT_DESC> layout =
-			{
+			std::vector<D3D11_INPUT_ELEMENT_DESC> layout = {
 				{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 				{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 				{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -1132,7 +1583,7 @@ private:
 			devcon->CopyResource(reinterpret_cast<ID3D11Resource*>(dst), reinterpret_cast<ID3D11Resource*>(src));
 		}
 
-		void SetViewport(tSireViewport const& v) {
+		void SetViewport(tSireViewport const& v) override {
 			D3D11_VIEWPORT vp = {};
 			vp.TopLeftX = v.x;
 			vp.TopLeftY = v.y;
@@ -1143,7 +1594,7 @@ private:
 			devcon->RSSetViewports(1, &vp);
 		}
 
-		void SetTexture(intptr_t* texture, intptr_t* textureMask) {
+		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
 			cb.hasTex = texture ? true : false;
 			cb.hasMask = textureMask ? true : false;
 
@@ -1155,6 +1606,17 @@ private:
 
 			if (textureMask)
 				mask = reinterpret_cast<ID3D11ShaderResourceView*>(textureMask);
+		}
+
+
+		uint8_t* Lock(void* ptr) override {
+			D3D11_MAPPED_SUBRESOURCE map;
+			devcon->Map(reinterpret_cast<ID3D11Texture2D*>(ptr), 0, D3D11_MAP_READ, 0, &map);
+			return (uint8_t*)map.pData;
+		}
+
+		void Unlock(void* ptr) override {
+			devcon->Unmap(reinterpret_cast<ID3D11Texture2D*>(ptr), 0);
 		}
 
 		// End virtual override
@@ -1181,16 +1643,6 @@ private:
 			D3D11_TEXTURE2D_DESC out = {};
 			texture->GetDesc(&out);
 			return out;
-		}
-
-		uint8_t* Lock(ID3D11Texture2D* texture) {
-			D3D11_MAPPED_SUBRESOURCE map;
-			devcon->Map(texture, 0, D3D11_MAP_READ, 0, &map);
-			return (uint8_t*)map.pData;
-		}
-
-		void Unlock(ID3D11Texture2D* texture) {
-			devcon->Unmap(texture, 0);
 		}
 
 		ID3D11RenderTargetView* CreateRenderTarget(ID3D11Texture2D* texture) {
@@ -1301,21 +1753,285 @@ private:
 
 	};
 
+#ifdef SIRE_INCLUDE_DX12
 	struct SireDirectX12 : SireRenderer {
+		IDXGISwapChain* swapchain;
+		ID3D12Device* dev;
+		ID3D12CommandQueue* commandQueue;
+		ID3D12CommandAllocator* commandAllocator;
+		ID3D12GraphicsCommandList* commandList;
+		ID3D12DescriptorHeap* descriptorHeap;
+		ID3D12Resource* vertexBuffer;
+		ID3D12Resource* indexBuffer;
+		ID3D12Resource* constantBuffer;
+		ID3D12DescriptorHeap* samplerHeap;
+		ID3D12RootSignature* rootSignature;
+		ID3D12PipelineState* pipelineState;
+		ID3D12ShaderReflection* vertexShader;
+		ID3D12ShaderReflection* pixelShader;
+		ID3D12ShaderReflection* internalVertexShader;
+		ID3D12ShaderReflection* internalPixelShader;
+		ID3D12Resource* tex;
+		ID3D12Resource* mask;
 
+		SireDirectX12() : SireRenderer() {
+			swapchain = nullptr;
+			dev = nullptr;
+			commandQueue = nullptr;
+			commandAllocator = nullptr;
+			commandList = nullptr;
+			descriptorHeap = nullptr;
+			vertexBuffer = nullptr;
+			indexBuffer = nullptr;
+			constantBuffer = nullptr;
+			samplerHeap = nullptr;
+			rootSignature = nullptr;
+			pipelineState = nullptr;
+			vertexShader = nullptr;
+			pixelShader = nullptr;
+			internalVertexShader = nullptr;
+			internalPixelShader = nullptr;
+			tex = nullptr;
+			mask = nullptr;
+		}
+
+		void Init(intptr_t* ptr) override {
+			if (initialised)
+				return;
+
+			swapchain = reinterpret_cast<IDXGISwapChain*>(ptr);
+			HRESULT hResult = swapchain->GetDevice(__uuidof(ID3D11Device), (void**)&dev);
+
+			if (FAILED(hResult))
+				return;
+
+			dev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator), (void**)&commandAllocator);
+
+			if (!commandAllocator)
+				return;
+
+			dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, nullptr, __uuidof(ID3D12GraphicsCommandList), (void**)&commandList);
+			
+			commandList->Close();
+
+			DXGI_SWAP_CHAIN_DESC swapChainDesc;
+			ZeroMemory(&swapChainDesc, sizeof(swapChainDesc));
+			swapchain->GetDesc(&swapChainDesc);
+
+			hWnd = swapChainDesc.OutputWindow;
+
+			D3D12_RESOURCE_DESC bufferDesc;
+			ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+
+			bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+			bufferDesc.Alignment = 0;
+			bufferDesc.Width = sizeof(tVertex) * 65536;
+			bufferDesc.Height = 1;
+			bufferDesc.DepthOrArraySize = 1;
+			bufferDesc.MipLevels = 1;
+			bufferDesc.Format = DXGI_FORMAT_UNKNOWN;
+			bufferDesc.SampleDesc.Count = 1;
+			bufferDesc.SampleDesc.Quality = 0;
+			bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+			bufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+			D3D12_HEAP_PROPERTIES heapProp;
+			ZeroMemory(&heapProp, sizeof(heapProp));
+			heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+			// Vertex buffer
+			dev->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+				D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&vertexBuffer);
+
+			// Index buffer
+			bufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+			dev->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+				D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&indexBuffer);
+
+			// Constant buffer
+			bufferDesc.Width = sizeof(tConstBuff);
+			dev->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+				D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&constantBuffer);
+
+			D3D12_SAMPLER_DESC samplerDesc;
+			ZeroMemory(&samplerDesc, sizeof(samplerDesc));
+			samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			samplerDesc.MipLODBias = 0.0f;
+			samplerDesc.MaxAnisotropy = 1;
+			samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+			samplerDesc.BorderColor[0] = 0.0f;
+			samplerDesc.BorderColor[1] = 0.0f;
+			samplerDesc.BorderColor[2] = 0.0f;
+			samplerDesc.BorderColor[3] = 0.0f;
+			samplerDesc.MinLOD = 0.0f;
+			samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+
+			dev->CreateSampler(&samplerDesc, samplerHeap->GetCPUDescriptorHandleForHeapStart());
+
+			// Init shaders
+			ID3DBlob* VS = CompileShader(hlslShader5_0, "VShader", "vs_5_0");
+			ID3DBlob* PS = CompileShader(hlslShader5_0, "PShader", "ps_5_0");
+
+			internalVertexShader = CreateShaderReflection(VS->GetBufferPointer(), VS->GetBufferSize());
+			internalPixelShader = CreateShaderReflection(PS->GetBufferPointer(), PS->GetBufferSize());
+
+			D3D12_DESCRIPTOR_RANGE descriptorRange;
+			descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+			descriptorRange.NumDescriptors = 1;
+			descriptorRange.BaseShaderRegister = 0;
+			descriptorRange.RegisterSpace = 0;
+			descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+			D3D12_ROOT_PARAMETER rootParameters[1];
+			rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
+			rootParameters[0].DescriptorTable.pDescriptorRanges = &descriptorRange;
+			rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+			D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc;
+			rootSignatureDesc.NumParameters = 1;
+			rootSignatureDesc.pParameters = rootParameters;
+			rootSignatureDesc.NumStaticSamplers = 0;
+			rootSignatureDesc.pStaticSamplers = nullptr;
+			rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+			ID3DBlob* signature;
+			ID3DBlob* error;
+			D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
+			dev->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+
+			initialised = true;
+		}
+
+		void Shutdown() override {
+			if (!initialised)
+				return;
+
+			Release(vertexBuffer);
+			Release(indexBuffer);
+			Release(constantBuffer);
+			Release(rootSignature);
+			Release(internalVertexShader);
+			Release(internalPixelShader);
+
+			vertexShader = nullptr;
+			pixelShader = nullptr;
+
+			swapchain = nullptr;
+			dev = nullptr;
+
+			initialised = false;
+		}
+
+		void Begin() override {
+			
+		}
+
+		void End() override {
+			// Fallback to internal shaders if unset.
+			if (!pixelShader && internalPixelShader)
+				pixelShader = internalPixelShader;
+
+			if (!vertexShader && internalVertexShader)
+				vertexShader = internalVertexShader;
+
+		}
+
+		void SetRenderStates(tRenderState const& s) override {
+			
+		}
+
+		void CopyResource(intptr_t* dst, intptr_t* src) override {
+
+		}
+
+		void SetViewport(tSireViewport const& v) override {
+
+		}
+
+		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+			cb.hasTex = texture ? true : false;
+			cb.hasMask = textureMask ? true : false;
+
+			texture = nullptr;
+			textureMask = nullptr;
+
+			if (texture)
+				tex = reinterpret_cast<ID3D12Resource*>(texture);
+
+			if (textureMask)
+				mask = reinterpret_cast<ID3D12Resource*>(textureMask);
+		}
+
+
+		uint8_t* Lock(void* ptr) override {
+			return nullptr;
+		}
+
+		void Unlock(void* ptr) override {
+
+		}
+
+		// End virtual override
+
+		ID3DBlob* CompileShader(std::string const str, const char* szEntrypoint, const char* szTarget) {
+			ID3DBlob* out = nullptr;
+			ID3DBlob* outerr = nullptr;
+
+			auto hr = D3DCompile(str.c_str(), str.length(), 0, nullptr, nullptr, szEntrypoint, szTarget, D3DCOMPILE_ENABLE_STRICTNESS, 0, &out, &outerr);
+			if (FAILED(hr)) {
+				if (outerr) {
+					char szError[256]{ 0 };
+					memcpy(szError, outerr->GetBufferPointer(), outerr->GetBufferSize());
+					MessageBoxA(nullptr, szError, "Error", MB_OK);
+				}
+				return outerr;
+			}
+			return out;
+		}
+
+		ID3D12ShaderReflection* CreateShaderReflection(const void* buffer, size_t size) {
+			ID3D12ShaderReflection* out = nullptr;
+			D3DReflect(buffer, size, IID_PPV_ARGS(&out));
+			return out;
+		}
 	};
 
+#endif
+
+#ifdef SIRE_INCLUDE_OPENGL
 	struct SireOpenGL : SireRenderer {
 		HDC con;
 		HGLRC conres;
 		uint32_t tex;
 		uint32_t mask;
 
+		uint32_t vbo;
+		uint32_t vao;
+
+		uint32_t ibo;
+
+		uint32_t vertexShader;
+		uint32_t pixelShader;
+
+		uint32_t shaderProgram;
+
 		SireOpenGL() : SireRenderer() {
 			con = nullptr;
 			conres = nullptr;
 			tex = 0;
 			mask = 0;
+			vbo = 0;
+			vao = 0;
+			ibo = 0;
+
+			vertexShader = 0;
+			pixelShader = 0;
+
+			shaderProgram = 0;
 		}
 
 		// Start virtual override
@@ -1330,6 +2046,41 @@ private:
 
 			con = reinterpret_cast<HDC>(ptr);
 			conres = wglCreateContext(con);
+
+			if (!gladLoadGL()) {
+				std::cout << "Glad error" << std::endl;
+			}
+
+			glGenBuffers(1, &vbo);
+			glGenBuffers(1, &ibo);
+			glGenVertexArrays(1, &vao);
+
+			glBindVertexArray(vao);
+
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(tVertex) * 65536, nullptr, GL_DYNAMIC_DRAW);
+
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(uint16_t) * 65536, nullptr, GL_DYNAMIC_DRAW);
+
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+			uint32_t shader = glCreateShader(GL_VERTEX_SHADER);
+			const char* shaderSource = glslShader3_3_0.c_str();
+			glShaderSource(shader, 1, &shaderSource, NULL);
+			glCompileShader(shader);
+
+			shaderProgram = glCreateProgram();
+			glAttachShader(shaderProgram, shader);
+			glLinkProgram(shaderProgram);
+			glDeleteShader(shader);
+
+			glBindVertexArray(0);
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			glUseProgram(0);
+
 			initialised = true;
 		}
 
@@ -1338,13 +2089,20 @@ private:
 				return;
 
 			con = nullptr;
-			tex = 0;
-			mask = 0;
 
 			if (conres) {
 				wglDeleteContext(conres);
 				conres = nullptr;
 			}
+
+			tex = 0;
+			mask = 0;
+
+			glDeleteProgram(shaderProgram);
+
+			glDeleteVertexArrays(1, &vao);
+			glDeleteBuffers(1, &vbo);
+			glDeleteBuffers(1, &ibo);
 
 			initialised = false;
 		}
@@ -1354,65 +2112,55 @@ private:
 		}
 
 		void End() override {
+			if (vertices.empty())
+				throw std::runtime_error("Error End() method has been called before settings vertices.");
+
 			auto prevconres = wglGetCurrentContext();
 			wglMakeCurrent(con, conres);
 
-			glPushAttrib(GL_ALL_ATTRIB_BITS);
+			glBindVertexArray(vao);
 
-			glMatrixMode(GL_PROJECTION);
-			glPushMatrix();
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(tVertex), vertices.data());
 
-			glLoadIdentity();
+			glEnableVertexAttribArray(0);
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(tVertex), (void*)offsetof(tVertex, pos));
+
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(tVertex), (void*)offsetof(tVertex, col));
+
+			glEnableVertexAttribArray(2);
+			glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(tVertex), (void*)offsetof(tVertex, uv0));
+
+			glEnableVertexAttribArray(3);
+			glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(tVertex), (void*)offsetof(tVertex, uv1));
+
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+			glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, numIndices * sizeof(uint16_t), indices.data());
+
+			glUseProgram(shaderProgram);
 
 			tConstBuff tempcb = cb;
 			tempcb.matrix.Transpose();
-			glLoadMatrixf(&tempcb.matrix.ToFloatArray()[0]);
+			glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "proj"), 1, GL_FALSE, &tempcb.matrix.ToFloatArray()[0]);
+			glUniform1i(glGetUniformLocation(shaderProgram, "hasTex"), tempcb.hasTex);
+			glUniform1i(glGetUniformLocation(shaderProgram, "hasMask"), tempcb.hasMask);
+			glUniform1i(glGetUniformLocation(shaderProgram, "swapColors"), tempcb.swapColors);
 
-			glMatrixMode(GL_MODELVIEW);
-			glPushMatrix();
-			glLoadIdentity();
-
-			glEnableClientState(GL_VERTEX_ARRAY);
-			glEnableClientState(GL_COLOR_ARRAY);
-			glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-
-			glVertexPointer(3, GL_FLOAT, sizeof(tVertex), &vertices[0].pos);
-			glColorPointer(4, GL_FLOAT, sizeof(tVertex), &vertices[0].col);
-			glTexCoordPointer(2, GL_FLOAT, sizeof(tVertex), &vertices[0].uv0);
-			glTexCoordPointer(2, GL_FLOAT, sizeof(tVertex), &vertices[0].uv1);
-
-			glEnable(GL_TEXTURE_2D);
+			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, tex);
+			glUniform1i(glGetUniformLocation(shaderProgram, "tex0"), 0);
+
+			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, mask);
+			glUniform1i(glGetUniformLocation(shaderProgram, "mask0"), 1);
 
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glDrawElements(GL_TRIANGLES, numIndices, GL_UNSIGNED_SHORT, 0);
 
-			glEnable(GL_TEXTURE_2D);
-
-			int32_t type = GL_POINTS;
-			switch (primitiveType) {
-			case SIRE_LINE:
-				type = GL_LINES;
-				break;
-			case SIRE_POINT:
-				type = GL_POINTS;
-				break;
-			case SIRE_TRIANGLE:
-				type = GL_TRIANGLES;
-				break;
-			}
-
-			glDrawElements(type, numIndices, GL_UNSIGNED_SHORT, &indices[0]);
-
-			glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-			glDisableClientState(GL_COLOR_ARRAY);
-			glDisableClientState(GL_VERTEX_ARRAY);
-
-			glPopMatrix();
-			glPopAttrib();
+			glBindVertexArray(0);
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			glUseProgram(0);
 
 			wglMakeCurrent(con, prevconres);
 		}
@@ -1435,13 +2183,9 @@ private:
 
 			glEnable(GL_DEPTH_TEST);
 			glDisable(GL_STENCIL_TEST);
-			glDisable(GL_LIGHTING);
-			glDisable(GL_COLOR_MATERIAL);
 			glEnable(GL_SCISSOR_TEST);
 
 			glPolygonMode(GL_FRONT_AND_BACK, SireFillMode(s.fillMode));
-			glShadeModel(GL_SMOOTH);
-			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 		}
 
 		void SetViewport(tSireViewport const& v) override {
@@ -1453,8 +2197,8 @@ private:
 		}
 
 		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
-			tex = texture ? static_cast<uint32_t>(*texture) : 0;
-			mask = textureMask ? static_cast<uint32_t>(*textureMask) : 0;
+			tex = texture ? reinterpret_cast<tTexture2D*>(texture)->id : 0;
+			mask = textureMask ? reinterpret_cast<tTexture2D*>(textureMask)->id : 0;
 		}
 
 		// End virtual override
@@ -1507,49 +2251,62 @@ private:
 				return GL_ONE_MINUS_DST_COLOR;
 			case SIRE_BLEND_SRC_ALPHA_SAT:
 				return GL_SRC_ALPHA_SATURATE;
-			//case SIRE_BLEND_BLEND_FACTOR:
-			//	return GL_CONSTANT_COLOR;
-			//case SIRE_BLEND_INV_BLEND_FACTOR:
-			//	return GL_ONE_MINUS_CONSTANT_COLOR;
-			//case SIRE_BLEND_SRC1_COLOR:
-			//	return GL_SRC1_COLOR;
-			//case SIRE_BLEND_INV_SRC1_COLOR:
-			//	return GL_ONE_MINUS_SRC1_COLOR;
-			//case SIRE_BLEND_SRC1_ALPHA:
-			//	return GL_SRC1_ALPHA;
-			//case SIRE_BLEND_INV_SRC1_ALPHA:
-			//	return GL_ONE_MINUS_SRC1_ALPHA;
 			}
 
 			return 0;
 		}
 
-		tSireTexture2D GetBackBuffer(uint32_t buffer) {
+		tTexture2D* GetBackBuffer(uint32_t buffer) {
+			int32_t w = 0;
+			int32_t h = 0;
+			
 			HDC hdc = wglGetCurrentDC();
-
-			RECT windowRect;
+			HDC hMemoryDC = CreateCompatibleDC(hdc);
+			
+			RECT windowRect = {};
 			GetClientRect(WindowFromDC(hdc), &windowRect);
-
-			tSireTexture2D out = {};
-			out.w = windowRect.right - windowRect.left;
-			out.h = windowRect.bottom - windowRect.top;
+			
+			w = windowRect.right - windowRect.left;
+			h = windowRect.bottom - windowRect.top;
+			
+			HBITMAP hBitmap = CreateCompatibleBitmap(hdc, w, h);
+			HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hBitmap);
+			
+			BitBlt(hMemoryDC, 0, 0, w, h, hdc, 0, 0, SRCCOPY);
+			
+			BITMAPINFO bitmapInfo = { 0 };
+			bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bitmapInfo.bmiHeader.biWidth = w;
+			bitmapInfo.bmiHeader.biHeight = -h;
+			bitmapInfo.bmiHeader.biPlanes = 1;
+			bitmapInfo.bmiHeader.biBitCount = 32;
+			
+			uint8_t* pixels = new unsigned char[w * h * 4];
+			
+			GetDIBits(hMemoryDC, hBitmap, 0, h, pixels, &bitmapInfo, DIB_RGB_COLORS);
+			
+			tTexture2D* out = CreateTexture(w, h, pixels);
+			
+			delete[] pixels;
 
 			return out;
 		}
 
-		uint32_t* CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
-			uint32_t* out = new uint32_t;
-			glGenTextures(1, out);
-			glBindTexture(GL_TEXTURE_2D, *out);
-
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		tTexture2D* CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
+			tTexture2D* out = new tTexture2D();
+			glGenTextures(1, &out->id);
+			glBindTexture(GL_TEXTURE_2D, out->id);
+			
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+			
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+			glGenerateMipmap(GL_TEXTURE_2D);
+
 			glBindTexture(GL_TEXTURE_2D, 0);
+
+			out->width = width;
+			out->height = height;
 
 			return out;
 		}
@@ -1559,11 +2316,60 @@ private:
 		}
 	};
 
+#endif
+
+#ifdef SIRE_INCLUDE_VULKAN
 	struct SireVulkan : SireRenderer {
+		SireVulkan() {
 
+		}
 
+		// Start virtual override
+
+		bool IsRendererActive() override { 
+			return false;
+		}
+
+		void Init(intptr_t* ptr) override {
+
+		}
+
+		void Shutdown() override {
+
+		}
+
+		void Begin() override {
+
+		}
+
+		void End() override {
+		}
+
+		void SetVertices(tVertex const& v) override {
+		}
+
+		void SetRenderStates(tRenderState const& s) override {
+
+		}
+
+		void SetViewport(tSireViewport const& v) override {
+
+		}
+
+		void CopyResource(intptr_t* dst, intptr_t* src) override {
+
+		}
+
+		void SetTexture(intptr_t* tex, intptr_t* mask) override {
+		
+		}
+
+		// End virtual override	
 	};
 
+#endif
+
+	static constexpr auto SIRE_NUM_MIN_VERTEX_INDEX = 4096;
 
 	static inline tSireShared shared = {};
 
@@ -1583,10 +2389,57 @@ private:
 
 	static inline tConstBuff cb = { {}, false, false };
 
+	static inline std::string glslShader3_3_0 = R"(
+    #version 330 core
+
+    layout(std140) uniform ConstantBuffer
+    {
+        mat4 proj;
+        int hasTex;
+        int hasMask;
+		int swapColors;    
+	};
+
+    uniform sampler2D tex0;
+    uniform sampler2D mask0;
+
+    layout(location = 0) in vec4 position;
+    layout(location = 1) in vec4 color;
+    layout(location = 2) in vec2 uv0;
+    layout(location = 3) in vec2 uv1;
+
+    out vec4 FragColor;
+
+    void main()
+    {
+        gl_Position = proj * position;
+        FragColor = color;
+
+        if (hasTex )
+        {
+            FragColor *= texture(tex0, uv0);
+            FragColor.a = max(FragColor.a, color.a);
+        }
+
+        if (hasMask)
+        {
+            FragColor *= texture(mask0, uv1);
+        }
+
+		if (swapColors)
+		{	
+			float prev = FragColor.r;
+			FragColor.r = FragColor.b;
+			FragColor.b = prev;
+		}
+    }
+	)";
+
 	static inline std::string hlslShader2_0 = R"(
 	matrix proj;
 	int hasTex;
 	int hasMask;
+	int swapColors;
 	
 	sampler2D tex0 : register(s0);
 	sampler2D mask0 : register(s1);
@@ -1625,17 +2478,85 @@ private:
 	    {
 	        c *= tex2D(mask0, input.uv1);
 	    }
+
+		//if (swapColors)
+		//{	
+		//	float prev = c.r;
+		//	c.r = c.b;
+		//	c.b = prev;
+		//}
 	    
 	    return c;
 	}
 	)";
 
+	static inline std::string hlslShader4_0 = R"(
+	cbuffer ConstantBuffer : register(b0)
+	{
+	    matrix proj;
+	    int hasTex;
+	    int hasMask;
+		int swapColors;
+	};
+	
+	Texture2D tex0 : register(t0);
+	Texture2D mask0 : register(t1);
+	SamplerState sampler0 : register(s0);
+	
+	struct VOut
+	{
+	    float4 position : POSITION;
+	    float4 color : COLOR;
+	    float2 uv0 : TEXCOORD0;
+	    float2 uv1 : TEXCOORD1;
+	};
+	
+	VOut VShader(float4 position : POSITION, float4 color : COLOR, float2 uv0 : TEXCOORD0, float2 uv1 : TEXCOORD1)
+	{
+	    VOut output;
+	
+	    output.position = mul(position, proj);
+	    output.color = color;
+	    output.uv0 = uv0;
+	    output.uv1 = uv1;
+	
+	    return output;
+	}
+	
+	float4 PShader(VOut input) : SV_Target
+	{
+	    float4 c = input.color;
+	
+	    if (hasTex)
+	    {
+	        c *= tex0.Sample(sampler0, input.uv0);
+	        c.a = max(c.a, input.color.a);
+	    }
+	
+	    if (hasMask)
+	    {
+	        c *= mask0.Sample(sampler0, input.uv1);
+	    }
+
+		if (swapColors)
+		{	
+			float prev = c.r;
+			c.r = c.b;
+			c.b = prev;
+		}
+	
+	    return c;
+	}
+	)";
+
+
 	static inline std::string hlslShader5_0 = R"(
 	cbuffer ConstantBuffer : register(b0)
 	{
-	    matrix projection;
+	    matrix proj;
 	    int hasTex;
 	    int hasMask;
+		int swapColors;
 	};
 	
 	Texture2D tex0 : register(t0);
@@ -1654,7 +2575,7 @@ private:
 	{
 	    VOut output;
 	
-	    output.position = mul(position, projection);
+	    output.position = mul(position, proj);
 	    output.color = color;
 	    output.uv0 = uv0;
 	    output.uv1 = uv1;
@@ -1676,6 +2597,13 @@ private:
 	    {
 	        c *= mask0.Sample(sampler0, uv1);
 	    }
+
+		if (swapColors)
+		{	
+			float prev = c.r;
+			c.r = c.b;
+			c.b = prev;
+		}
 	    
 	    return c;
 	}
@@ -1847,6 +2775,12 @@ public:
 		if (currentRenderer != SIRE_RENDERER_NULL)
 			return;
 
+		if (vertices.max_size() < SIRE_NUM_MIN_VERTEX_INDEX)
+			vertices.reserve(SIRE_NUM_MIN_VERTEX_INDEX);
+
+		if (indices.max_size() < SIRE_NUM_MIN_VERTEX_INDEX)
+			indices.reserve(SIRE_NUM_MIN_VERTEX_INDEX);
+
 		if (!renderersInitialised) {
 			if (!renderers.at(re)) {
 				SireRenderer* renderer = nullptr;
@@ -1854,24 +2788,36 @@ public:
 				switch (re) {
 				case SIRE_RENDERER_NULL:
 					break;
+#ifdef SIRE_INCLUDE_DX9
 				case SIRE_RENDERER_DX9:
 					renderer = new SireDirectX9();
 					break;
+#endif
+#ifdef SIRE_INCLUDE_DX10
 				case SIRE_RENDERER_DX10:
 					renderer = new SireDirectX10();
 					break;
+#endif
+#ifdef SIRE_INCLUDE_DX11
 				case SIRE_RENDERER_DX11:
 					renderer = new SireDirectX11();
 					break;
+#endif
+#ifdef SIRE_INCLUDE_DX12
 				case SIRE_RENDERER_DX12:
 					renderer = new SireDirectX12();
 					break;
+#endif
+#ifdef SIRE_INCLUDE_OPENGL
 				case SIRE_RENDERER_OPENGL:
 					renderer = new SireOpenGL();
 					break;
+#endif
+#ifdef SIRE_INCLUDE_VULKAN
 				case SIRE_RENDERER_VULKAN:
 					renderer = new SireVulkan();
 					break;
+#endif
 				}
 
 				renderers.at(re) = renderer;
@@ -1882,7 +2828,13 @@ public:
 		currentRenderer = re;
 		currentRendererMainPtr = reinterpret_cast<intptr_t*>(ptr);
 
-		return GetRenderers(GetCurrentRenderer())->Init(currentRendererMainPtr);
+		GetRenderers(GetCurrentRenderer())->Init(currentRendererMainPtr);
+
+		InitAfterRenderer();
+	}
+
+	static inline void InitAfterRenderer() {
+		;;
 	}
 
 	static inline void Shutdown() {
@@ -1914,20 +2866,121 @@ public:
 		}
 	}
 
-	static inline tSireTexture2D* GetBackBuffer(uint32_t buffer) {
+	static inline HWND GetHWND() {
+		return GetRenderers(GetCurrentRenderer())->GetWindow();
+	}
+
+	static inline tSireFloat2 GetWindowSize() {
+		RECT windowRect;
+		GetWindowRect(GetHWND(), &windowRect);
+
+		tSireFloat2 out;
+		out.x = windowRect.right - windowRect.left;
+		out.y = windowRect.bottom - windowRect.top;
+
+		return out;
+	}
+
+	// These 2 works for old devices but process it's too slow to be used each frame.
+	static inline void _GetClosestPowerOfTwoSize(uint32_t& width, uint32_t& height) {
+		height = static_cast<uint32_t>(std::pow(2, std::ceil(std::log2(height))));
+		width = height;
+	}
+
+	static inline std::vector<uint8_t> _ResizePixels(uint8_t* srcPixels, uint32_t srcWidth, uint32_t srcHeight, uint32_t dstWidth, uint32_t dstHeight) {
+		float scaleX = static_cast<float>(dstWidth) / static_cast<float>(srcWidth);
+		float scaleY = static_cast<float>(dstHeight) / static_cast<float>(srcHeight);
+
+		std::vector<uint8_t> resizedPixels(dstWidth * dstHeight * 4, 0);
+
+		for (int32_t y = 0; y < dstHeight; ++y) {
+			for (int32_t x = 0; x < dstWidth; ++x) {
+				int srcX = static_cast<int>(x / scaleX);
+				int srcY = static_cast<int>(y / scaleY);
+				int srcIndex = (srcY * srcWidth + srcX) * 4;
+				int dstIndex = (y * dstWidth + x) * 4;
+
+				if (srcX < srcWidth && srcY < srcHeight) {
+					resizedPixels[dstIndex] = srcPixels[srcIndex];
+					resizedPixels[dstIndex + 1] = srcPixels[srcIndex + 1];
+					resizedPixels[dstIndex + 2] = srcPixels[srcIndex + 2];
+					resizedPixels[dstIndex + 3] = srcPixels[srcIndex + 3];
+				}
+			}
+		}
+
+		return resizedPixels;
+	}
+	//
+	
+	// Use only if device has non power of 2 support.
+	static inline std::unique_ptr<tSireTexture2D> GetFakeBackBuffer(uint32_t buffer) {
+		static std::vector<uint8_t> data;
+		HWND wnd = GetRenderers(GetCurrentRenderer())->GetWindow();
+		auto windowSize = Sire::GetWindowSize();
+
+		uint32_t fileSize = (windowSize.x * windowSize.y * 4);
+		if (data.size() < fileSize) {
+			data.resize(fileSize);
+		}
+
+		HDC dc = GetDC(GetRenderers(GetCurrentRenderer())->GetWindow());
+		HDC compdc = CreateCompatibleDC(dc);
+	
+		HBITMAP bmp = CreateCompatibleBitmap(dc, windowSize.x, windowSize.y);
+		HBITMAP bmpOld = static_cast<HBITMAP>(SelectObject(compdc, bmp));
+	
+		BitBlt(compdc, 0, 0, windowSize.x, windowSize.y, dc, 0, 0, SRCCOPY);
+		GetBitmapBits(bmp, fileSize, data.data());
+	
+		auto out = CreateTexture(windowSize.x, windowSize.y, data.data());
+		out->swapColors = true;
+
+		SelectObject(compdc, bmpOld);
+		DeleteObject(bmp);
+		DeleteDC(compdc);
+		ReleaseDC(wnd, dc);
+	
+		return out;
+	}
+
+	static inline uint8_t* Lock(tSireTexture2D* surface) {
+		return GetRenderers(GetCurrentRenderer())->Lock(surface->ptrs->surface);
+	}
+
+	static inline void Unlock(tSireTexture2D* surface) {
+		GetRenderers(GetCurrentRenderer())->Unlock(surface->ptrs->surface);
+	}
+
+	static inline std::unique_ptr<tSireTexture2D> GetBackBuffer(uint32_t buffer) {
 		if (!IsRendererActive())
 			return nullptr;
 
 		tSireTexture2D* out = new tSireTexture2D();
 
 		switch (GetCurrentRenderer()) {
+#ifdef SIRE_INCLUDE_DX9
 		case SIRE_RENDERER_DX9: {
 			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetBackBufferSurface(buffer);
 			auto desc = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetDesc(result);
 			out->Set(desc.Width, desc.Height, desc.Format, nullptr, reinterpret_cast<intptr_t*>(result));
 		} break;
-		case SIRE_RENDERER_DX10:
-			break;
+#endif
+#ifdef SIRE_INCLUDE_DX10
+		case SIRE_RENDERER_DX10: {
+			auto tex = GetRenderers<SireDirectX10>(GetCurrentRenderer())->GetBackBuffer(buffer);
+
+			if (tex) {
+				auto result = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateShaderResourceView(tex);
+				auto desc = GetRenderers<SireDirectX10>(GetCurrentRenderer())->GetDesc(tex);
+
+				if (tex) {
+					out->Set(desc.Width, desc.Height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
+				}
+			}
+		} break;
+#endif
+#ifdef SIRE_INCLUDE_DX11
 		case SIRE_RENDERER_DX11: {
 			auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetBackBuffer(buffer);
 
@@ -1940,24 +2993,28 @@ public:
 				}
 			}
 		} break;
-		case SIRE_RENDERER_DX12:
-			break;
-		case SIRE_RENDERER_OPENGL: {
-			auto result = GetRenderers<SireOpenGL>(GetCurrentRenderer())->GetBackBuffer(buffer);
-			out->Set(result.w, result.h, result.format, reinterpret_cast<intptr_t*>(result.ptrs->texture), reinterpret_cast<intptr_t*>(result.ptrs->texture));
+#endif
+#ifdef SIRE_INCLUDE_DX12
+		case SIRE_RENDERER_DX12: {
 		} break;
+#endif
+#ifdef SIRE_INCLUDE_OPENGL
+		case SIRE_RENDERER_OPENGL: {
+		} break;
+#endif
 		}
 
-		return out;
+		return std::unique_ptr<tSireTexture2D>(out);
 	}
 
-	static inline tSireTexture2D* CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
+	static inline std::unique_ptr<tSireTexture2D> CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
 		if (!IsRendererActive())
 			return nullptr;
 
 		tSireTexture2D* out = new tSireTexture2D();
 
 		switch (GetCurrentRenderer()) {
+#ifdef SIRE_INCLUDE_DX9
 		case SIRE_RENDERER_DX9: {
 			IDirect3DSurface9* sout = nullptr;
 			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->CreateTexture(width, height, pixels, &sout);
@@ -1965,8 +3022,20 @@ public:
 			if (result)
 				out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(sout));
 		} break;
-		case SIRE_RENDERER_DX10:
-			break;
+#endif
+#ifdef SIRE_INCLUDE_DX10
+		case SIRE_RENDERER_DX10: {
+			auto tex = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
+
+			if (tex) {
+				auto result = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateShaderResourceView(tex);
+
+				if (result)
+					out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
+			}
+		} break;
+#endif
+#ifdef SIRE_INCLUDE_DX11
 		case SIRE_RENDERER_DX11: {
 			auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
 
@@ -1977,17 +3046,18 @@ public:
 					out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
 			}
 		} break;
+#endif
+#ifdef SIRE_INCLUDE_DX12
 		case SIRE_RENDERER_DX12:
 			break;
-		case SIRE_RENDERER_OPENGL:
-			auto result = GetRenderers<SireOpenGL>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
-
-			if (result)
-				out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(result));
-			break;
+#endif
+#ifdef SIRE_INCLUDE_OPENGL
+		case SIRE_RENDERER_OPENGL: {
+		} break;
+#endif
 		}
 
-		return out;
+		return std::unique_ptr<tSireTexture2D>(out);
 	}
 
 	static inline void SetViewport(float x, float y, float w, float h) {
@@ -2002,13 +3072,17 @@ public:
 		return GetRenderers(GetCurrentRenderer())->SetViewport(shared.viewport);
 	}
 
-	static inline void CopyResource(tSireTexture2D* dst, tSireTexture2D* src) {
+	static inline void CopyResource(std::unique_ptr<tSireTexture2D> const& dst, std::unique_ptr<tSireTexture2D> const& src) {
 		if (!IsRendererActive())
+			return;
+
+		if (!src || !dst)
 			return;
 
 		dst->w = src->w;
 		dst->h = src->h;
 		dst->format = src->format;
+		dst->swapColors = src->swapColors;
 
 		return GetRenderers(GetCurrentRenderer())->CopyResource(dst->ptrs->surface, src->ptrs->surface);
 	}
@@ -2030,15 +3104,17 @@ public:
 		}
 	}
 
-	static inline void SetTexture(tSireTexture2D* tex, tSireTexture2D* mask) {
+	static inline void SetTexture(std::unique_ptr<tSireTexture2D> const& tex, std::unique_ptr<tSireTexture2D> const& mask) {
 		if (!IsRendererActive())
 			return;
 
 		intptr_t* tex0 = nullptr;
 		intptr_t* tex1 = nullptr;
 
-		if (tex)
+		if (tex) {
 			tex0 = tex->ptrs->texture;
+			cb.swapColors = tex->swapColors;
+		}
 
 		if (mask)
 			tex1 = mask->ptrs->texture;
@@ -2051,13 +3127,25 @@ public:
 			return;
 
 		Sire::Begin(SIRE_TRIANGLE);
+		Sire::SetTexCoords2f(0.0f, 0.0f);
 		Sire::SetVertex2f(rect.x, rect.y);
+
+		Sire::SetTexCoords2f(1.0f, 0.0f);
 		Sire::SetVertex2f(rect.z, rect.y);
+
+		Sire::SetTexCoords2f(1.0f, 1.0f);
 		Sire::SetVertex2f(rect.z, rect.w);
 
+
+		Sire::SetTexCoords2f(0.0f, 0.0f);
 		Sire::SetVertex2f(rect.x, rect.y);
+
+		Sire::SetTexCoords2f(1.0f, 1.0f);
 		Sire::SetVertex2f(rect.z, rect.w);
+
+		Sire::SetTexCoords2f(0.0f, 1.0f);
 		Sire::SetVertex2f(rect.x, rect.w);
+
 		Sire::End();
 	}
 };
