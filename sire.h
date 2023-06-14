@@ -23,7 +23,7 @@
 #include <d3d10.h>
 #include <dxgi.h>
 #include <DirectXMath.h>
-#pragma comment(lib, "d3d10_1.lib"
+#pragma comment(lib, "d3d10_1.lib")
 #pragma comment(lib, "d3d10.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
@@ -63,6 +63,71 @@
 #include <vulkan/vulkan.h>
 #pragma comment(lib, "vulkan-1.lib")
 #endif
+
+template <typename T>
+class SirePtr {
+public:
+	SirePtr() : ptr(nullptr) {}
+
+	SirePtr(T* p) : ptr(p) {}
+
+	~SirePtr() {
+		Reset();
+	}
+
+	SirePtr(const SirePtr<T>& other) = delete;
+
+	SirePtr<T>& operator=(const SirePtr<T>& other) = delete;
+
+	SirePtr(SirePtr<T>&& other) noexcept : ptr(nullptr) {
+		*this = std::move(other);
+	}
+
+	SirePtr<T>& operator=(SirePtr<T>&& other) noexcept {
+		if (this != &other) {
+			Reset();
+			ptr = std::move(other.ptr);
+			other.ptr = nullptr;
+		}
+		return *this;
+	}
+
+	T* Get() const {
+		return ptr.get();
+	}
+
+	T** GetAddressOf() {
+		return ptr.get();
+	}
+
+	T* operator->() const {
+		return ptr.get();
+	}
+
+	operator bool() const {
+		return (ptr != nullptr);
+	}
+
+	void Reset() {
+		Release();
+		ptr.reset();
+	}
+
+	void Reset(T* p) {
+		Release();
+		ptr.reset(p);
+	}
+
+	void Release() {
+		if (ptr) {
+			ptr->Release();
+			ptr = nullptr;
+		}
+	}
+
+private:
+	std::unique_ptr<T> ptr;
+};
 
 class Sire {
 public:
@@ -187,14 +252,24 @@ public:
 			void Release() {
 				if (GetCurrentRenderer() == owner) {
 					switch (GetCurrentRenderer()) {
-					case SIRE_RENDERER_DX9:
-						Sire::Release((IDirect3DTexture9*)texture);
-						Sire::Release((IDirect3DSurface9*)surface);
-						break;
-					case SIRE_RENDERER_DX11:
-						Sire::Release((ID3D11ShaderResourceView*)texture);
-						Sire::Release((ID3D11Texture2D*)surface);
-						break;
+					case SIRE_RENDERER_DX9: {
+						IDirect3DTexture9* tex = reinterpret_cast<IDirect3DTexture9*>(texture);
+						IDirect3DSurface9* surf = reinterpret_cast<IDirect3DSurface9*>(surface);
+						Sire::Release(tex);
+						Sire::Release(surf);
+					} break;
+					case SIRE_RENDERER_DX10: {
+						ID3D10ShaderResourceView* tex = reinterpret_cast<ID3D10ShaderResourceView*>(texture);
+						ID3D10Texture2D* surf = reinterpret_cast<ID3D10Texture2D*>(surface);
+						Sire::Release(tex);
+						Sire::Release(surf);
+					} break;
+					case SIRE_RENDERER_DX11: {
+						ID3D11ShaderResourceView* tex = reinterpret_cast<ID3D11ShaderResourceView*>(texture);
+						ID3D11Texture2D* surf = reinterpret_cast<ID3D11Texture2D*>(surface);
+						Sire::Release(tex);
+						Sire::Release(surf);
+					} break;
 					}
 				}
 
@@ -202,23 +277,34 @@ public:
 				surface = nullptr;
 			}
 		};
-		std::unique_ptr<tSirePtrsHolder> ptrs;
+		tSirePtrsHolder ptrs;
 
 		tSireTexture2D() {
 			w = 0;
 			h = 0;
 			format = 0;
-			ptrs = std::make_unique<tSirePtrsHolder>();
 			swapColors = 0;
+		}
+
+		~tSireTexture2D() {
+
 		}
 
 		void Set(int32_t width, int32_t height, int32_t format, intptr_t* tex, intptr_t* surf) {
 			this->w = width;
 			this->h = height;
 			this->format = format;
-			this->ptrs->texture = tex;
-			this->ptrs->surface = surf;
+			this->ptrs.texture = tex;
+			this->ptrs.surface = surf;
 		}
+
+		void Release() {
+
+		}
+	};
+
+	struct tSireInt2 {
+		int32_t x, y;
 	};
 
 	struct tSireFloat2 {
@@ -505,15 +591,9 @@ private:
 
 		// Start virtual override
 		bool IsRendererActive() override {
-			if (!initialised || !dev)
-				return false;
-
-			D3DCAPS9 caps = {};
-			HRESULT hr = dev->GetDeviceCaps(&caps);
-
-			if (SUCCEEDED(hr)) {
-				hr = dev->TestCooperativeLevel();
-				return hr == D3D_OK;
+			if (initialised && dev) {
+				HRESULT hr = dev->TestCooperativeLevel();
+				return SUCCEEDED(hr);
 			}
 
 			return false;
@@ -922,13 +1002,12 @@ private:
 		}
 
 		bool IsRendererActive() override {
-			if (!initialised || !swapchain || !dev)
-				return false;
+			if (initialised && swapchain && dev) {
+				HRESULT hr = dev->GetDeviceRemovedReason();
+				return SUCCEEDED(hr);
+			}
 
-			DXGI_SWAP_CHAIN_DESC desc;
-			HRESULT hr = swapchain->GetDesc(&desc);
-
-			return SUCCEEDED(hr) && desc.BufferCount > 0;
+			return false;
 		}
 
 		void Init(intptr_t* ptr) override {
@@ -1065,26 +1144,61 @@ private:
 			auto renderTarget = GetRenderTarget();
 			dev->OMSetRenderTargets(1, &renderTarget, nullptr);
 
+			ID3D10VertexShader* prevVertexShader = nullptr;
+			dev->VSGetShader(&prevVertexShader);
 			dev->VSSetShader(vertexShader);
+
+			ID3D10PixelShader* prevPixelShader = nullptr;
+			dev->PSGetShader(&prevPixelShader);
 			dev->PSSetShader(pixelShader);
 
+			ID3D10Buffer* prevVertexConstantBuffer = nullptr;
+			dev->VSGetConstantBuffers(0, 1, &prevVertexConstantBuffer);
 			dev->VSSetConstantBuffers(0, 1, &pb);
+
+			ID3D10Buffer* prevPixelConstantBuffer = nullptr;
+			dev->PSGetConstantBuffers(0, 1, &prevPixelConstantBuffer);
 			dev->PSSetConstantBuffers(0, 1, &pb);
 
 			// Set textures
+			ID3D10ShaderResourceView* prevVertexShaderResourceView0 = nullptr;
+			dev->VSGetShaderResources(0, 1, &prevVertexShaderResourceView0);
 			dev->VSSetShaderResources(0, 1, &tex);
+
+			ID3D10ShaderResourceView* prevVertexShaderResourceView1 = nullptr;
+			dev->VSGetShaderResources(1, 1, &prevVertexShaderResourceView1);
 			dev->VSSetShaderResources(1, 1, &mask);
 
+			ID3D10ShaderResourceView* prevPixelShaderResourceView0 = nullptr;
+			dev->PSGetShaderResources(0, 1, &prevPixelShaderResourceView0);
 			dev->PSSetShaderResources(0, 1, &tex);
+
+			ID3D10ShaderResourceView* prevPixelShaderResourceView1 = nullptr;
+			dev->PSGetShaderResources(1, 1, &prevPixelShaderResourceView1);
 			dev->PSSetShaderResources(1, 1, &mask);
 
+			ID3D10SamplerState* prevPixelSamplers = nullptr;
+			dev->PSGetSamplers(0, 1, &prevPixelSamplers);
 			dev->PSSetSamplers(0, 1, &ss);
+
+			ID3D10SamplerState* prevVertexSamplers = nullptr;
+			dev->GSGetSamplers(0, 1, &prevVertexSamplers);
 			dev->GSSetSamplers(0, 1, &ss);
 
 			// Set index/vertex buffers
 			UINT stride = sizeof(tVertex);
 			UINT offset = 0;
+
+			UINT prevStride;
+			UINT prevVertexOffset;
+			ID3D10Buffer* prevVertexBuffers = nullptr;
+			dev->IAGetVertexBuffers(0, 1, &prevVertexBuffers, &prevStride, &prevVertexOffset);
 			dev->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+
+			ID3D10Buffer* prevIndexBuffers = nullptr;
+			DXGI_FORMAT prevFormat;
+			UINT prevIndexOffset;
+			dev->IAGetIndexBuffer(&prevIndexBuffers, &prevFormat, &prevIndexOffset);
 			dev->IASetIndexBuffer(ib, DXGI_FORMAT_R16_UINT, 0);
 
 			D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
@@ -1099,10 +1213,52 @@ private:
 				type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 				break;
 			}
+
+			D3D_PRIMITIVE_TOPOLOGY prevType;
+			dev->IAGetPrimitiveTopology(&prevType);
 			dev->IASetPrimitiveTopology(type);
 
 			// Draw
 			dev->DrawIndexed(numIndices, 0, 0);
+
+			// Restore shit
+			dev->VSSetShader(prevVertexShader);
+			Release(prevVertexShader);
+
+			dev->PSSetShader(prevPixelShader);
+			Release(prevPixelShader);
+
+			dev->VSSetConstantBuffers(0, 1, &prevVertexConstantBuffer);
+			Release(prevVertexConstantBuffer);
+
+			dev->PSSetConstantBuffers(0, 1, &prevPixelConstantBuffer);
+			Release(prevPixelConstantBuffer);
+
+			dev->VSSetShaderResources(0, 1, &prevVertexShaderResourceView0);
+			Release(prevVertexShaderResourceView0);
+
+			dev->VSSetShaderResources(1, 1, &prevVertexShaderResourceView1);
+			Release(prevVertexShaderResourceView1);
+
+			dev->PSSetShaderResources(0, 1, &prevPixelShaderResourceView0);
+			Release(prevPixelShaderResourceView0);
+
+			dev->PSSetShaderResources(1, 1, &prevPixelShaderResourceView1);
+			Release(prevPixelShaderResourceView1);
+
+			dev->PSSetSamplers(0, 1, &prevPixelSamplers);
+			Release(prevPixelSamplers);
+
+			dev->GSSetSamplers(0, 1, &prevVertexSamplers);
+			Release(prevVertexSamplers);
+
+			dev->IASetVertexBuffers(0, 1, &prevVertexBuffers, &prevStride, &prevVertexOffset);
+			Release(prevVertexBuffers);
+
+			dev->IASetIndexBuffer(prevIndexBuffers, prevFormat, prevIndexOffset);
+			Release(prevIndexBuffers);
+
+			dev->IASetPrimitiveTopology(prevType);
 
 			Release(renderTarget);
 
@@ -1130,19 +1286,60 @@ private:
 		}
 
 		void SetRenderStates(tRenderState const& s) override {
+			D3D10_RASTERIZER_DESC rasterizerDesc;
+			ZeroMemory(&rasterizerDesc, sizeof(rasterizerDesc));
+			rasterizerDesc.CullMode = (D3D10_CULL_MODE)s.cullMode;
+			rasterizerDesc.FillMode = (D3D10_FILL_MODE)s.fillMode;
+			ID3D10RasterizerState* rasterizerState = nullptr;
+			dev->CreateRasterizerState(&rasterizerDesc, &rasterizerState);
+			dev->RSSetState(rasterizerState);
+			Release(rasterizerState);
 
+			D3D10_BLEND_DESC blendDesc;
+			ZeroMemory(&blendDesc, sizeof(blendDesc));
+			blendDesc.BlendEnable[0] = s.blendEnable;
+			blendDesc.SrcBlend = (D3D10_BLEND)s.srcBlend;
+			blendDesc.DestBlend = (D3D10_BLEND)s.dstBlend;
+			blendDesc.BlendOp = (D3D10_BLEND_OP)s.blendop;
+			blendDesc.SrcBlendAlpha = (D3D10_BLEND)s.srcBlendAlpha;
+			blendDesc.DestBlendAlpha = (D3D10_BLEND)s.destBlendAlpha;
+			blendDesc.BlendOpAlpha = (D3D10_BLEND_OP)s.blendOpAlpha;
+			blendDesc.RenderTargetWriteMask[0] = s.renderTargetWriteMask;
+
+			ID3D10BlendState* blendState = nullptr;
+			dev->CreateBlendState(&blendDesc, &blendState);
+			float blendFactor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+			dev->OMSetBlendState(blendState, blendFactor, s.sampleMask);
+			blendState->Release();
 		}
 
 		void SetViewport(tSireViewport const& v) override {
-
+			D3D10_VIEWPORT vp = {};
+			vp.TopLeftX = v.x;
+			vp.TopLeftY = v.y;
+			vp.Width = v.w;
+			vp.Height = v.h;
+			vp.MinDepth = v.mind;
+			vp.MaxDepth = v.maxd;
+			dev->RSSetViewports(1, &vp);
 		}
 
 		void CopyResource(intptr_t* dst, intptr_t* src) override {
-
+			dev->CopyResource(reinterpret_cast<ID3D10Resource*>(dst), reinterpret_cast<ID3D10Resource*>(src));
 		}
 
-		void SetTexture(intptr_t* tex, intptr_t* mask) override {
+		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+			cb.hasTex = texture ? true : false;
+			cb.hasMask = textureMask ? true : false;
 
+			tex = nullptr;
+			mask = nullptr;
+
+			if (texture)
+				tex = reinterpret_cast<ID3D10ShaderResourceView*>(texture);
+
+			if (textureMask)
+				mask = reinterpret_cast<ID3D10ShaderResourceView*>(textureMask);
 		}
 
 		uint8_t* Lock(void* ptr) {
@@ -1338,13 +1535,12 @@ private:
 
 		// Start virtual override
 		bool IsRendererActive() override {
-			if (!initialised || !swapchain || !dev || !devcon)
-				return false;
+			if (initialised && swapchain && dev && devcon) {
+				HRESULT hr = dev->GetDeviceRemovedReason();
+				return SUCCEEDED(hr);
+			}
 
-			DXGI_SWAP_CHAIN_DESC desc;
-			HRESULT hr = swapchain->GetDesc(&desc);
-
-			return SUCCEEDED(hr) && desc.BufferCount > 0;
+			return false;
 		}
 
 		void Init(intptr_t* ptr) override {
@@ -1486,31 +1682,68 @@ private:
 			memcpy(mappedResource.pData, &tempcb, sizeof(tempcb));
 			devcon->Unmap(pb, 0);
 
+			ID3D11InputLayout* prevInputLayout = nullptr;
+			devcon->IAGetInputLayout(&prevInputLayout);
 			devcon->IASetInputLayout(inputLayout);
 
 			auto renderTarget = GetRenderTarget();
 			devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
 
+			ID3D11VertexShader* prevVertexShader = nullptr;
+			devcon->VSGetShader(&prevVertexShader, nullptr, 0);
 			devcon->VSSetShader(vertexShader, nullptr, 0);
+
+			ID3D11PixelShader* prevPixelShader = nullptr;
+			devcon->PSGetShader(&prevPixelShader, nullptr, 0);
 			devcon->PSSetShader(pixelShader, nullptr, 0);
 
+			ID3D11Buffer* prevVertexConstantBuffer = nullptr;
+			devcon->VSGetConstantBuffers(0, 1, &prevVertexConstantBuffer);
 			devcon->VSSetConstantBuffers(0, 1, &pb);
+
+			ID3D11Buffer* prevPixelConstantBuffer = nullptr;
+			devcon->PSGetConstantBuffers(0, 1, &prevPixelConstantBuffer);
 			devcon->PSSetConstantBuffers(0, 1, &pb);
 
 			// Set textures
+			ID3D11ShaderResourceView* prevVertexShaderResourceView0 = nullptr;
+			devcon->VSGetShaderResources(0, 1, &prevVertexShaderResourceView0);
 			devcon->VSSetShaderResources(0, 1, &tex);
+
+			ID3D11ShaderResourceView* prevVertexShaderResourceView1 = nullptr;
+			devcon->VSGetShaderResources(1, 1, &prevVertexShaderResourceView1);
 			devcon->VSSetShaderResources(1, 1, &mask);
 
+			ID3D11ShaderResourceView* prevPixelShaderResourceView0 = nullptr;
+			devcon->PSGetShaderResources(0, 1, &prevPixelShaderResourceView0);
 			devcon->PSSetShaderResources(0, 1, &tex);
+
+			ID3D11ShaderResourceView* prevPixelShaderResourceView1 = nullptr;
+			devcon->PSGetShaderResources(1, 1, &prevPixelShaderResourceView1);
 			devcon->PSSetShaderResources(1, 1, &mask);
 
+			ID3D11SamplerState* prevPixelSamplers = nullptr;
+			devcon->PSGetSamplers(0, 1, &prevPixelSamplers);
 			devcon->PSSetSamplers(0, 1, &ss);
+
+			ID3D11SamplerState* prevVertexSamplers = nullptr;
+			devcon->GSGetSamplers(0, 1, &prevVertexSamplers);
 			devcon->GSSetSamplers(0, 1, &ss);
 
 			// Set index/vertex buffers
 			UINT stride = sizeof(tVertex);
 			UINT offset = 0;
+
+			UINT prevStride;
+			UINT prevVertexOffset;
+			ID3D11Buffer* prevVertexBuffers = nullptr;
+			devcon->IAGetVertexBuffers(0, 1, &prevVertexBuffers, &prevStride, &prevVertexOffset);
 			devcon->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+
+			ID3D11Buffer* prevIndexBuffers = nullptr;
+			DXGI_FORMAT prevFormat;
+			UINT prevIndexOffset;
+			devcon->IAGetIndexBuffer(&prevIndexBuffers, &prevFormat, &prevIndexOffset);
 			devcon->IASetIndexBuffer(ib, DXGI_FORMAT_R16_UINT, 0);
 
 			D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
@@ -1525,30 +1758,66 @@ private:
 				type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 				break;
 			}
+
+			D3D_PRIMITIVE_TOPOLOGY prevType;
+			devcon->IAGetPrimitiveTopology(&prevType);
 			devcon->IASetPrimitiveTopology(type);
 
 			// Draw
 			devcon->DrawIndexed(numIndices, 0, 0);
 
+			// Restore shit
+			devcon->IASetInputLayout(prevInputLayout);
+			Release(prevInputLayout);
+
+			devcon->VSSetShader(prevVertexShader, nullptr, 0);
+			Release(prevVertexShader);
+
+			devcon->PSSetShader(prevPixelShader, nullptr, 0);
+			Release(prevPixelShader);
+
+			devcon->VSSetConstantBuffers(0, 1, &prevVertexConstantBuffer);
+			Release(prevVertexConstantBuffer);
+
+			devcon->PSSetConstantBuffers(0, 1, &prevPixelConstantBuffer);
+			Release(prevPixelConstantBuffer);
+
+			devcon->VSSetShaderResources(0, 1, &prevVertexShaderResourceView0);
+			Release(prevVertexShaderResourceView0);
+
+			devcon->VSSetShaderResources(1, 1, &prevVertexShaderResourceView1);
+			Release(prevVertexShaderResourceView1);
+
+			devcon->PSSetShaderResources(0, 1, &prevPixelShaderResourceView0);
+			Release(prevPixelShaderResourceView0);
+
+			devcon->PSSetShaderResources(1, 1, &prevPixelShaderResourceView1);
+			Release(prevPixelShaderResourceView1);
+
+			devcon->PSSetSamplers(0, 1, &prevPixelSamplers);
+			Release(prevPixelSamplers);
+
+			devcon->GSSetSamplers(0, 1, &prevVertexSamplers);
+			Release(prevVertexSamplers);
+
+			devcon->IASetVertexBuffers(0, 1, &prevVertexBuffers, &prevStride, &prevVertexOffset);
+			Release(prevVertexBuffers);
+
+			devcon->IASetIndexBuffer(prevIndexBuffers, prevFormat, prevIndexOffset);
+			Release(prevIndexBuffers);
+
+			devcon->IASetPrimitiveTopology(prevType);
+
+			devcon->RSSetState(rasterizerState);
+			Release(rasterizerState);
+
+			devcon->OMSetDepthStencilState(depthStencilState, stencilRef);
+			Release(depthStencilState);
+
+			devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
+			Release(blendState);
+
 			Release(renderTarget);
-
-			if (rasterizerState) {
-				devcon->RSSetState(rasterizerState);
-				Release(rasterizerState);
-				depthStencilState = nullptr;
-			}
-
-			if (depthStencilState) {
-				devcon->OMSetDepthStencilState(depthStencilState, stencilRef);
-				Release(depthStencilState);
-				depthStencilState = nullptr;
-			}
-
-			if (blendState) {
-				devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
-				Release(blendState);
-				blendState = nullptr;
-			}
 		}
 
 		void SetRenderStates(tRenderState const& s) override {
@@ -2620,7 +2889,7 @@ public:
 	}
 
 	static inline bool IsRendererActive() {
-		return GetRenderers(GetCurrentRenderer())->IsRendererActive();
+		return GetCurrentRenderer() != SIRE_RENDERER_NULL && GetRenderers(GetCurrentRenderer())->IsRendererActive();
 	}
 
 	static inline void Begin(eSirePrimitiveType type) {
@@ -2653,6 +2922,7 @@ public:
 			numIndices = static_cast<uint32_t>(indices.size());
 		}
 
+		GetRenderers(GetCurrentRenderer())->SetRenderStates(shared.renderStates);
 		return GetRenderers(GetCurrentRenderer())->End();
 	}
 
@@ -2766,8 +3036,6 @@ public:
 			shared.renderStates.sampleMask = value;
 			break;
 		}
-
-		return GetRenderers(GetCurrentRenderer())->SetRenderStates(shared.renderStates);
 	}
 
 	template <typename T>
@@ -2843,6 +3111,9 @@ public:
 
 		GetRenderers(GetCurrentRenderer())->Shutdown();
 
+		vertices.clear();
+		indices.clear();
+
 		if (renderersInitialised) {
 			for (auto& it : renderers) {
 				if (it) {
@@ -2859,7 +3130,7 @@ public:
 	}
 
 	template<typename T>
-	static inline void Release(T* res) {
+	static inline void Release(T*& res) {
 		if (res) {
 			res->Release();
 			res = nullptr;
@@ -2870,13 +3141,13 @@ public:
 		return GetRenderers(GetCurrentRenderer())->GetWindow();
 	}
 
-	static inline tSireFloat2 GetWindowSize() {
+	static inline tSireInt2 GetWindowSize() {
 		RECT windowRect;
 		GetWindowRect(GetHWND(), &windowRect);
 
-		tSireFloat2 out;
-		out.x = windowRect.right - windowRect.left;
-		out.y = windowRect.bottom - windowRect.top;
+		tSireInt2 out;
+		out.x = static_cast<int32_t>(windowRect.right - windowRect.left);
+		out.y = static_cast<int32_t>(windowRect.bottom - windowRect.top);
 
 		return out;
 	}
@@ -2914,17 +3185,17 @@ public:
 	//
 	
 	// Use only if device has non power of 2 support.
-	static inline std::unique_ptr<tSireTexture2D> GetFakeBackBuffer(uint32_t buffer) {
+	static inline SirePtr<tSireTexture2D> GetFakeBackBuffer(uint32_t buffer) {
 		static std::vector<uint8_t> data;
-		HWND wnd = GetRenderers(GetCurrentRenderer())->GetWindow();
-		auto windowSize = Sire::GetWindowSize();
+		HWND wnd = GetHWND();
+		auto windowSize = GetWindowSize();
 
 		uint32_t fileSize = (windowSize.x * windowSize.y * 4);
 		if (data.size() < fileSize) {
 			data.resize(fileSize);
 		}
 
-		HDC dc = GetDC(GetRenderers(GetCurrentRenderer())->GetWindow());
+		HDC dc = GetDC(GetHWND());
 		HDC compdc = CreateCompatibleDC(dc);
 	
 		HBITMAP bmp = CreateCompatibleBitmap(dc, windowSize.x, windowSize.y);
@@ -2945,18 +3216,21 @@ public:
 	}
 
 	static inline uint8_t* Lock(tSireTexture2D* surface) {
-		return GetRenderers(GetCurrentRenderer())->Lock(surface->ptrs->surface);
+		return GetRenderers(GetCurrentRenderer())->Lock(surface->ptrs.surface);
 	}
 
 	static inline void Unlock(tSireTexture2D* surface) {
-		GetRenderers(GetCurrentRenderer())->Unlock(surface->ptrs->surface);
+		GetRenderers(GetCurrentRenderer())->Unlock(surface->ptrs.surface);
 	}
 
-	static inline std::unique_ptr<tSireTexture2D> GetBackBuffer(uint32_t buffer) {
+	static inline SirePtr<tSireTexture2D> GetBackBuffer(int32_t buffer) {
 		if (!IsRendererActive())
 			return nullptr;
 
-		tSireTexture2D* out = new tSireTexture2D();
+		if (buffer == -1)
+			return GetFakeBackBuffer(0);
+
+		SirePtr<tSireTexture2D> out(new tSireTexture2D);
 
 		switch (GetCurrentRenderer()) {
 #ifdef SIRE_INCLUDE_DX9
@@ -3004,14 +3278,14 @@ public:
 #endif
 		}
 
-		return std::unique_ptr<tSireTexture2D>(out);
+		return out;
 	}
 
-	static inline std::unique_ptr<tSireTexture2D> CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
+	static inline SirePtr<tSireTexture2D> CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
 		if (!IsRendererActive())
 			return nullptr;
 
-		tSireTexture2D* out = new tSireTexture2D();
+		SirePtr<tSireTexture2D> out(new tSireTexture2D);
 
 		switch (GetCurrentRenderer()) {
 #ifdef SIRE_INCLUDE_DX9
@@ -3057,7 +3331,7 @@ public:
 #endif
 		}
 
-		return std::unique_ptr<tSireTexture2D>(out);
+		return out;
 	}
 
 	static inline void SetViewport(float x, float y, float w, float h) {
@@ -3072,7 +3346,7 @@ public:
 		return GetRenderers(GetCurrentRenderer())->SetViewport(shared.viewport);
 	}
 
-	static inline void CopyResource(std::unique_ptr<tSireTexture2D> const& dst, std::unique_ptr<tSireTexture2D> const& src) {
+	static inline void CopyResource(SirePtr<tSireTexture2D> const& dst, SirePtr<tSireTexture2D> const& src) {
 		if (!IsRendererActive())
 			return;
 
@@ -3084,7 +3358,7 @@ public:
 		dst->format = src->format;
 		dst->swapColors = src->swapColors;
 
-		return GetRenderers(GetCurrentRenderer())->CopyResource(dst->ptrs->surface, src->ptrs->surface);
+		return GetRenderers(GetCurrentRenderer())->CopyResource(dst->ptrs.surface, src->ptrs.surface);
 	}
 
 	static inline void SetProjectionMode(eSireProjection proj) {
@@ -3104,7 +3378,7 @@ public:
 		}
 	}
 
-	static inline void SetTexture(std::unique_ptr<tSireTexture2D> const& tex, std::unique_ptr<tSireTexture2D> const& mask) {
+	static inline void SetTexture(SirePtr<tSireTexture2D> const& tex, SirePtr<tSireTexture2D> const& mask) {
 		if (!IsRendererActive())
 			return;
 
@@ -3112,12 +3386,12 @@ public:
 		intptr_t* tex1 = nullptr;
 
 		if (tex) {
-			tex0 = tex->ptrs->texture;
+			tex0 = tex->ptrs.texture;
 			cb.swapColors = tex->swapColors;
 		}
 
 		if (mask)
-			tex1 = mask->ptrs->texture;
+			tex1 = mask->ptrs.texture;
 
 		return GetRenderers(GetCurrentRenderer())->SetTexture(tex0, tex1);
 	}
