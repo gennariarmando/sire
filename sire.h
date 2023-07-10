@@ -3144,7 +3144,7 @@ public:
 
 	static inline tSireInt2 GetWindowSize() {
 		RECT windowRect;
-		GetWindowRect(GetHWND(), &windowRect);
+		GetClientRect(GetHWND(), &windowRect);
 
 		tSireInt2 out;
 		out.x = static_cast<int32_t>(windowRect.right - windowRect.left);
@@ -3197,9 +3197,22 @@ public:
 		}
 
 		HDC dc = GetDC(GetHWND());
-		HDC compdc = CreateCompatibleDC(dc);
-	
-		HBITMAP bmp = CreateCompatibleBitmap(dc, windowSize.x, windowSize.y);
+		static HDC compdc = nullptr;
+		static HBITMAP bmp = nullptr;
+		static tSireInt2 size = { 0, 0 };
+
+		if (size.x != windowSize.x || size.y != windowSize.y) {
+			if (bmp)
+				DeleteObject(bmp);
+
+			if (compdc)
+				DeleteDC(compdc);
+
+			compdc = CreateCompatibleDC(dc);
+			bmp = CreateCompatibleBitmap(dc, windowSize.x, windowSize.y);
+			size = windowSize;
+		}
+
 		HBITMAP bmpOld = static_cast<HBITMAP>(SelectObject(compdc, bmp));
 	
 		BitBlt(compdc, 0, 0, windowSize.x, windowSize.y, dc, 0, 0, SRCCOPY);
@@ -3209,8 +3222,6 @@ public:
 		out->swapColors = true;
 
 		SelectObject(compdc, bmpOld);
-		DeleteObject(bmp);
-		DeleteDC(compdc);
 		ReleaseDC(wnd, dc);
 	
 		return out;
