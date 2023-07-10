@@ -219,7 +219,7 @@ public:
 		SIRE_COLOR_WRITE_ENABLE_GREEN = 2,
 		SIRE_COLOR_WRITE_ENABLE_BLUE = 4,
 		SIRE_COLOR_WRITE_ENABLE_ALPHA = 8,
-		SIRE_COLOR_WRITE_ENABLE_ALL = (((D3D11_COLOR_WRITE_ENABLE_RED | D3D11_COLOR_WRITE_ENABLE_GREEN) | D3D11_COLOR_WRITE_ENABLE_BLUE) | D3D11_COLOR_WRITE_ENABLE_ALPHA)
+		SIRE_COLOR_WRITE_ENABLE_ALL = (((SIRE_COLOR_WRITE_ENABLE_RED | SIRE_COLOR_WRITE_ENABLE_GREEN) | SIRE_COLOR_WRITE_ENABLE_BLUE) | SIRE_COLOR_WRITE_ENABLE_ALPHA)
 	};
 
 	enum eSirePrimitiveType {
@@ -1015,10 +1015,16 @@ private:
 				return;
 
 			swapchain = reinterpret_cast<IDXGISwapChain*>(ptr);
-			HRESULT hResult = swapchain->GetDevice(__uuidof(ID3D11Device), (void**)&dev);
+			HRESULT hResult = swapchain->GetDevice(__uuidof(ID3D10Device), (void**)&dev);
 
 			if (FAILED(hResult))
 				return;
+
+			DXGI_SWAP_CHAIN_DESC swapChainDesc;
+			ZeroMemory(&swapChainDesc, sizeof(swapChainDesc));
+			swapchain->GetDesc(&swapChainDesc);
+
+			hWnd = swapChainDesc.OutputWindow;
 
 			D3D10_BUFFER_DESC bufferDesc;
 			ZeroMemory(&bufferDesc, sizeof(bufferDesc));
@@ -1033,7 +1039,6 @@ private:
 			dev->CreateBuffer(&bufferDesc, nullptr, &vb);
 
 			// Index buffer
-			bufferDesc.ByteWidth = sizeof(uint16_t) * 65536;
 			bufferDesc.BindFlags = D3D10_BIND_INDEX_BUFFER;
 			dev->CreateBuffer(&bufferDesc, nullptr, &ib);
 
@@ -1060,12 +1065,12 @@ private:
 			samplerDesc.BorderColor[2] = 0.0f;
 			samplerDesc.BorderColor[3] = 0.0f;
 			samplerDesc.MinLOD = 0;
-			samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+			samplerDesc.MaxLOD = D3D10_FLOAT32_MAX;
 			dev->CreateSamplerState(&samplerDesc, &ss);
 
 			// Init shaders
-			ID3DBlob* VS = CompileShader(hlslShader5_0, "VShader", "vs_4_0");
-			ID3DBlob* PS = CompileShader(hlslShader5_0, "PShader", "ps_4_0");
+			ID3DBlob* VS = CompileShader(hlslShader4_0, "VShader", "vs_4_0");
+			ID3DBlob* PS = CompileShader(hlslShader4_0, "PShader", "ps_4_0");
 
 			internalVertexShader = CreateVertexShader(VS->GetBufferPointer(), VS->GetBufferSize());
 			internalPixelShader = CreatePixelShader(PS->GetBufferPointer(), PS->GetBufferSize());
@@ -1139,6 +1144,8 @@ private:
 			memcpy(out, &tempcb, sizeof(tempcb));
 			pb->Unmap();
 
+			ID3D10InputLayout* prevInputLayout = nullptr;
+			dev->IAGetInputLayout(&prevInputLayout);
 			dev->IASetInputLayout(inputLayout);
 
 			auto renderTarget = GetRenderTarget();
@@ -1222,6 +1229,9 @@ private:
 			dev->DrawIndexed(numIndices, 0, 0);
 
 			// Restore shit
+			dev->IASetInputLayout(prevInputLayout);
+			Release(prevInputLayout);
+
 			dev->VSSetShader(prevVertexShader);
 			Release(prevVertexShader);
 
@@ -1260,25 +1270,16 @@ private:
 
 			dev->IASetPrimitiveTopology(prevType);
 
+			dev->RSSetState(rasterizerState);
+			Release(rasterizerState);
+
+			dev->OMSetDepthStencilState(depthStencilState, stencilRef);
+			Release(depthStencilState);
+
+			dev->OMSetBlendState(blendState, blendFactor, sampleMask);
+			Release(blendState);
+
 			Release(renderTarget);
-
-			if (rasterizerState) {
-				dev->RSSetState(rasterizerState);
-				Release(rasterizerState);
-				depthStencilState = nullptr;
-			}
-
-			if (depthStencilState) {
-				dev->OMSetDepthStencilState(depthStencilState, stencilRef);
-				Release(depthStencilState);
-				depthStencilState = nullptr;
-			}
-
-			if (blendState) {
-				dev->OMSetBlendState(blendState, blendFactor, sampleMask);
-				Release(blendState);
-				blendState = nullptr;
-			}
 		}
 
 		void SetVertices(tVertex const& v) override {
@@ -1449,8 +1450,8 @@ private:
 		}
 
 		D3D10_VIEWPORT GetViewport() {
-			uint32_t numViewport = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-			D3D10_VIEWPORT out[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+			uint32_t numViewport = D3D10_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+			D3D10_VIEWPORT out[D3D10_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
 
 			dev->RSGetViewports(&numViewport, out);
 			return out[0];
@@ -2748,12 +2749,12 @@ private:
 	        c *= tex2D(mask0, input.uv1);
 	    }
 
-		//if (swapColors)
-		//{	
-		//	float prev = c.r;
-		//	c.r = c.b;
-		//	c.b = prev;
-		//}
+		if (swapColors)
+		{	
+			float prev = c.r;
+			c.r = c.b;
+			c.b = prev;
+		}
 	    
 	    return c;
 	}
