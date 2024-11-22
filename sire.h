@@ -1,3 +1,29 @@
+/*
+	SIRE - Simple Immediate Renderer
+ 	https://github.com/gennariarmando/sire
+	
+	MIT License
+	
+	Copyright (c) 2023 _AG
+	
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+	
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+	
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
 #pragma once
 #define SIRE_INCLUDE_DX9
 #define SIRE_INCLUDE_DX10
@@ -235,8 +261,8 @@ public:
 		int32_t swapColors;
 
 		struct tSirePtrsHolder {
-			intptr_t* texture;
-			intptr_t* surface;
+			uintptr_t* texture;
+			uintptr_t* surface;
 			eSireRenderer owner;
 
 			tSirePtrsHolder() {
@@ -290,7 +316,7 @@ public:
 
 		}
 
-		void Set(int32_t width, int32_t height, int32_t format, intptr_t* tex, intptr_t* surf) {
+		void Set(int32_t width, int32_t height, int32_t format, uintptr_t* tex, uintptr_t* surf) {
 			this->w = width;
 			this->h = height;
 			this->format = format;
@@ -533,15 +559,15 @@ private:
 		HWND hWnd;
 
 		virtual bool IsRendererActive() { return false; }
-		virtual void Init(intptr_t* ptr) {}
+		virtual void Init(uintptr_t* ptr) {}
 		virtual void Shutdown() {}
 		virtual void Begin() {}
 		virtual void End() {}
 		virtual void SetVertices(tVertex const& v) {}
 		virtual void SetRenderStates(tRenderState const& s) {}
 		virtual void SetViewport(tSireViewport const& v) {}
-		virtual void CopyResource(intptr_t* dst, intptr_t* src) {}
-		virtual void SetTexture(intptr_t* tex, intptr_t* mask) {}
+		virtual void CopyResource(uintptr_t* dst, uintptr_t* src) {}
+		virtual void SetTexture(uintptr_t* tex, uintptr_t* mask) {}
 		virtual HWND GetWindow() { return hWnd; }
 		virtual uint8_t* Lock(void* ptr) { return nullptr; }
 		virtual void Unlock(void* ptr) {}
@@ -599,7 +625,7 @@ private:
 			return false;
 		}
 
-		void Init(intptr_t* d) override {
+		void Init(uintptr_t* d) override {
 			if (initialised)
 				return;
 
@@ -790,7 +816,7 @@ private:
 			dev->SetViewport(&vp);
 		}
 
-		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+		void SetTexture(uintptr_t* texture, uintptr_t* textureMask) override {
 			cb.hasTex = texture ? true : false;
 			cb.hasMask = textureMask ? true : false;
 
@@ -804,7 +830,7 @@ private:
 				mask = reinterpret_cast<IDirect3DTexture9*>(textureMask);
 		}
 
-		void CopyResource(intptr_t* dst, intptr_t* src) override {
+		void CopyResource(uintptr_t* dst, uintptr_t* src) override {
 			dev->StretchRect(reinterpret_cast<IDirect3DSurface9*>(src), nullptr, reinterpret_cast<IDirect3DSurface9*>(dst), nullptr, D3DTEXF_NONE);
 		}
 
@@ -942,7 +968,7 @@ private:
 
 				if (pixels) {
 					IDirect3DSurface9* tempSurf = CreateSurface(width, height, pixels);
-					CopyResource(reinterpret_cast<intptr_t*>(surf), reinterpret_cast<intptr_t*>(tempSurf));
+					CopyResource(reinterpret_cast<uintptr_t*>(surf), reinterpret_cast<uintptr_t*>(tempSurf));
 					Release(tempSurf);
 				}
 			}
@@ -974,6 +1000,7 @@ private:
 		FLOAT blendFactor[4];
 		UINT sampleMask;
 		UINT stencilRef;
+		ID3D10RenderTargetView* renderTarget;
 
 		// Start virtual override
 		SireDirectX10() : SireRenderer() {
@@ -999,6 +1026,7 @@ private:
 			blendFactor[3] = 0.0f;
 			sampleMask = 0;
 			stencilRef = 0;
+			renderTarget = nullptr;
 		}
 
 		bool IsRendererActive() override {
@@ -1010,7 +1038,7 @@ private:
 			return false;
 		}
 
-		void Init(intptr_t* ptr) override {
+		void Init(uintptr_t* ptr) override {
 			if (initialised)
 				return;
 
@@ -1088,6 +1116,16 @@ private:
 			Release(VS);
 			Release(PS);
 
+			// Grab render target or create one
+			dev->OMGetRenderTargets(1, &renderTarget, nullptr);
+			if (!renderTarget) {
+				auto backBuffer = GetBackBuffer(0);
+				renderTarget = CreateRenderTarget(backBuffer);
+
+				dev->OMSetRenderTargets(1, &renderTarget, nullptr);
+				Release(backBuffer);
+			}
+
 			initialised = true;
 		}
 
@@ -1102,6 +1140,7 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
+			Release(renderTarget);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
@@ -1278,8 +1317,6 @@ private:
 
 			dev->OMSetBlendState(blendState, blendFactor, sampleMask);
 			Release(blendState);
-
-			Release(renderTarget);
 		}
 
 		void SetVertices(tVertex const& v) override {
@@ -1325,11 +1362,11 @@ private:
 			dev->RSSetViewports(1, &vp);
 		}
 
-		void CopyResource(intptr_t* dst, intptr_t* src) override {
+		void CopyResource(uintptr_t* dst, uintptr_t* src) override {
 			dev->CopyResource(reinterpret_cast<ID3D10Resource*>(dst), reinterpret_cast<ID3D10Resource*>(src));
 		}
 
-		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+		void SetTexture(uintptr_t* texture, uintptr_t* textureMask) override {
 			cb.hasTex = texture ? true : false;
 			cb.hasMask = textureMask ? true : false;
 
@@ -1362,9 +1399,7 @@ private:
 		}
 
 		ID3D10RenderTargetView* GetRenderTarget() {
-			ID3D10RenderTargetView* out = nullptr;
-			dev->OMGetRenderTargets(1, &out, nullptr);
-			return out;
+			return renderTarget;
 		}
 
 		ID3D10Texture2D* GetBackBuffer(uint32_t buffer) {
@@ -1507,6 +1542,7 @@ private:
 		FLOAT blendFactor[4];
 		UINT sampleMask;
 		UINT stencilRef;
+		ID3D11RenderTargetView* renderTarget;
 
 		SireDirectX11() : SireRenderer() {
 			swapchain = nullptr;
@@ -1532,6 +1568,7 @@ private:
 			blendFactor[3] = 0.0f;
 			sampleMask = 0;
 			stencilRef = 0;
+			renderTarget = nullptr;
 		}
 
 		// Start virtual override
@@ -1544,7 +1581,7 @@ private:
 			return false;
 		}
 
-		void Init(intptr_t* ptr) override {
+		void Init(uintptr_t* ptr) override {
 			if (initialised)
 				return;
 
@@ -1624,6 +1661,16 @@ private:
 			Release(VS);
 			Release(PS);
 
+			// Grab render target or create one
+			devcon->OMGetRenderTargets(1, &renderTarget, nullptr);
+			if (!renderTarget) {
+				auto backBuffer = GetBackBuffer(0);
+				renderTarget = CreateRenderTarget(backBuffer);
+
+				devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
+				Release(backBuffer);
+			}
+
 			initialised = true;
 		}
 
@@ -1638,6 +1685,7 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
+			Release(renderTarget);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
@@ -1817,8 +1865,6 @@ private:
 
 			devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
 			Release(blendState);
-
-			Release(renderTarget);
 		}
 
 		void SetRenderStates(tRenderState const& s) override {
@@ -1849,7 +1895,7 @@ private:
 			Release(blendState);
 		}
 
-		void CopyResource(intptr_t* dst, intptr_t* src) override {
+		void CopyResource(uintptr_t* dst, uintptr_t* src) override {
 			devcon->CopyResource(reinterpret_cast<ID3D11Resource*>(dst), reinterpret_cast<ID3D11Resource*>(src));
 		}
 
@@ -1864,7 +1910,7 @@ private:
 			devcon->RSSetViewports(1, &vp);
 		}
 
-		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+		void SetTexture(uintptr_t* texture, uintptr_t* textureMask) override {
 			cb.hasTex = texture ? true : false;
 			cb.hasMask = textureMask ? true : false;
 
@@ -1898,9 +1944,7 @@ private:
 		}
 
 		ID3D11RenderTargetView* GetRenderTarget() {
-			ID3D11RenderTargetView* out = nullptr;
-			devcon->OMGetRenderTargets(1, &out, nullptr);
-			return out;
+			return renderTarget;
 		}
 
 		ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
@@ -2065,7 +2109,7 @@ private:
 			mask = nullptr;
 		}
 
-		void Init(intptr_t* ptr) override {
+		void Init(uintptr_t* ptr) override {
 			if (initialised)
 				return;
 
@@ -2214,7 +2258,7 @@ private:
 			
 		}
 
-		void CopyResource(intptr_t* dst, intptr_t* src) override {
+		void CopyResource(uintptr_t* dst, uintptr_t* src) override {
 
 		}
 
@@ -2222,7 +2266,7 @@ private:
 
 		}
 
-		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+		void SetTexture(uintptr_t* texture, uintptr_t* textureMask) override {
 			cb.hasTex = texture ? true : false;
 			cb.hasMask = textureMask ? true : false;
 
@@ -2310,7 +2354,7 @@ private:
 			return con && conres && version;
 		}
 
-		void Init(intptr_t* ptr) override {
+		void Init(uintptr_t* ptr) override {
 			if (initialised)
 				return;
 
@@ -2462,11 +2506,11 @@ private:
 			glViewport(static_cast<int32_t>(v.x), static_cast<int32_t>(v.y), static_cast<int32_t>(v.w), static_cast<int32_t>(v.h));
 		}
 
-		void CopyResource(intptr_t* dst, intptr_t* src) override {
+		void CopyResource(uintptr_t* dst, uintptr_t* src) override {
 
 		}
 
-		void SetTexture(intptr_t* texture, intptr_t* textureMask) override {
+		void SetTexture(uintptr_t* texture, uintptr_t* textureMask) override {
 			tex = texture ? reinterpret_cast<tTexture2D*>(texture)->id : 0;
 			mask = textureMask ? reinterpret_cast<tTexture2D*>(textureMask)->id : 0;
 		}
@@ -2600,7 +2644,7 @@ private:
 			return false;
 		}
 
-		void Init(intptr_t* ptr) override {
+		void Init(uintptr_t* ptr) override {
 
 		}
 
@@ -2626,11 +2670,11 @@ private:
 
 		}
 
-		void CopyResource(intptr_t* dst, intptr_t* src) override {
+		void CopyResource(uintptr_t* dst, uintptr_t* src) override {
 
 		}
 
-		void SetTexture(intptr_t* tex, intptr_t* mask) override {
+		void SetTexture(uintptr_t* tex, uintptr_t* mask) override {
 		
 		}
 
@@ -2654,7 +2698,7 @@ private:
 
 	static inline std::array<SireRenderer*, SIRE_NUM_RENDERERS> renderers = {};
 	static inline eSireRenderer currentRenderer = SIRE_RENDERER_NULL;
-	static inline intptr_t* currentRendererMainPtr = nullptr;
+	static inline uintptr_t* currentRendererMainPtr = nullptr;
 	static inline bool renderersInitialised = false;
 
 	static inline tConstBuff cb = { {}, false, false };
@@ -3095,7 +3139,7 @@ public:
 		}
 
 		currentRenderer = re;
-		currentRendererMainPtr = reinterpret_cast<intptr_t*>(ptr);
+		currentRendererMainPtr = reinterpret_cast<uintptr_t*>(ptr);
 
 		GetRenderers(GetCurrentRenderer())->Init(currentRendererMainPtr);
 
@@ -3249,7 +3293,7 @@ public:
 		case SIRE_RENDERER_DX9: {
 			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetBackBufferSurface(buffer);
 			auto desc = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetDesc(result);
-			out->Set(desc.Width, desc.Height, desc.Format, nullptr, reinterpret_cast<intptr_t*>(result));
+			out->Set(desc.Width, desc.Height, desc.Format, nullptr, reinterpret_cast<uintptr_t*>(result));
 		} break;
 #endif
 #ifdef SIRE_INCLUDE_DX10
@@ -3261,7 +3305,7 @@ public:
 				auto desc = GetRenderers<SireDirectX10>(GetCurrentRenderer())->GetDesc(tex);
 
 				if (tex) {
-					out->Set(desc.Width, desc.Height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
+					out->Set(desc.Width, desc.Height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
 				}
 			}
 		} break;
@@ -3275,7 +3319,7 @@ public:
 				auto desc = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetDesc(tex);
 
 				if (tex) {
-					out->Set(desc.Width, desc.Height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
+					out->Set(desc.Width, desc.Height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
 				}
 			}
 		} break;
@@ -3306,7 +3350,7 @@ public:
 			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->CreateTexture(width, height, pixels, &sout);
 
 			if (result)
-				out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(sout));
+				out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(sout));
 		} break;
 #endif
 #ifdef SIRE_INCLUDE_DX10
@@ -3317,7 +3361,7 @@ public:
 				auto result = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateShaderResourceView(tex);
 
 				if (result)
-					out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
+					out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
 			}
 		} break;
 #endif
@@ -3329,7 +3373,7 @@ public:
 				auto result = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateShaderResourceView(tex);
 
 				if (result)
-					out->Set(width, height, 0, reinterpret_cast<intptr_t*>(result), reinterpret_cast<intptr_t*>(tex));
+					out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
 			}
 		} break;
 #endif
@@ -3394,8 +3438,8 @@ public:
 		if (!IsRendererActive())
 			return;
 
-		intptr_t* tex0 = nullptr;
-		intptr_t* tex1 = nullptr;
+		uintptr_t* tex0 = nullptr;
+		uintptr_t* tex1 = nullptr;
 
 		if (tex) {
 			tex0 = tex->ptrs.texture;
