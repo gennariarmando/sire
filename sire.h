@@ -557,6 +557,7 @@ private:
 	struct SireRenderer {
 		bool initialised;
 		HWND hWnd;
+		uint32_t textureFormat; // TODO: make global enum formats.
 
 		virtual bool IsRendererActive() { return false; }
 		virtual void Init(uintptr_t* ptr) {}
@@ -571,10 +572,13 @@ private:
 		virtual HWND GetWindow() { return hWnd; }
 		virtual uint8_t* Lock(void* ptr) { return nullptr; }
 		virtual void Unlock(void* ptr) {}
+		virtual void SetTextureFormat(uint32_t format) { textureFormat = format; }
+		virtual uint32_t GetTextureFormat() { return textureFormat; }
 
 		SireRenderer() {
 			initialised = false;
 			hWnd = nullptr;
+			textureFormat = 0;
 		}
 
 		bool operator==(const SireRenderer& other) const {
@@ -613,6 +617,7 @@ private:
 			internalVertexShader = nullptr;
 			verticesLegacy = {};
 			stateBlock = nullptr;
+			textureFormat = D3DFMT_A8R8G8B8;
 		}
 
 		// Start virtual override
@@ -940,7 +945,7 @@ private:
 
 		IDirect3DSurface9* CreateSurface(uint32_t width, uint32_t height, uint8_t* pixels) {
 			IDirect3DSurface9* out = nullptr;
-			HRESULT hr = dev->CreateOffscreenPlainSurface(width, height, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
+			HRESULT hr = dev->CreateOffscreenPlainSurface(width, height, (D3DFORMAT)textureFormat, D3DPOOL_DEFAULT, &out, nullptr);
 
 			if (SUCCEEDED(hr)) {
 				if (pixels) {
@@ -958,7 +963,7 @@ private:
 
 		IDirect3DTexture9* CreateTexture(uint32_t width, uint32_t height, uint8_t* pixels, IDirect3DSurface9** sout) {
 			IDirect3DTexture9* out = nullptr;
-			HRESULT hr = dev->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &out, nullptr);
+			HRESULT hr = dev->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, (D3DFORMAT)textureFormat, D3DPOOL_DEFAULT, &out, nullptr);
 
 			if (SUCCEEDED(hr)) {
 				IDirect3DSurface9* surf = GetSurfaceLevel(out, 0);
@@ -1027,6 +1032,7 @@ private:
 			sampleMask = 0;
 			stencilRef = 0;
 			renderTarget = nullptr;
+			textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 		}
 
 		bool IsRendererActive() override {
@@ -1500,7 +1506,7 @@ private:
 			desc.Height = height;
 			desc.MipLevels = 1;
 			desc.ArraySize = 1;
-			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.Format = (DXGI_FORMAT)textureFormat;
 			desc.SampleDesc.Count = 1;
 			desc.Usage = D3D10_USAGE_DEFAULT;
 			desc.BindFlags = D3D10_BIND_SHADER_RESOURCE;
@@ -1569,6 +1575,7 @@ private:
 			sampleMask = 0;
 			stencilRef = 0;
 			renderTarget = nullptr;
+			textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 		}
 
 		// Start virtual override
@@ -2045,7 +2052,7 @@ private:
 			desc.Height = height;
 			desc.MipLevels = 1;
 			desc.ArraySize = 1;
-			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.Format = (DXGI_FORMAT)textureFormat;
 			desc.SampleDesc.Count = 1;
 			desc.Usage = D3D11_USAGE_DEFAULT;
 			desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -2933,6 +2940,10 @@ public:
 		return reinterpret_cast<T*>(renderers.at(re));
 	}
 
+	static inline bool IsRendererActive(eSireRenderer renderer) {
+		return renderer != SIRE_RENDERER_NULL && GetRenderers(renderer)->IsRendererActive();
+	}
+
 	static inline bool IsRendererActive() {
 		return GetCurrentRenderer() != SIRE_RENDERER_NULL && GetRenderers(GetCurrentRenderer())->IsRendererActive();
 	}
@@ -3337,6 +3348,21 @@ public:
 		return out;
 	}
 
+	// Not global, format is currently renderer based.
+	static inline void SetTextureFormat(eSireRenderer renderer, uint32_t format) {
+		if (!IsRendererActive(renderer))
+			return;
+
+		GetRenderers(renderer)->SetTextureFormat(format);
+	}
+
+	static inline uint32_t GetTextureFormat(eSireRenderer renderer) {
+		if (!IsRendererActive(renderer))
+			return 0;
+
+		return GetRenderers(renderer)->GetTextureFormat();
+	}
+	
 	static inline SirePtr<tSireTexture2D> CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
 		if (!IsRendererActive())
 			return nullptr;
