@@ -1,6 +1,6 @@
 /*
 	SIRE - Simple Immediate Renderer
- 	https://github.com/gennariarmando/sire
+	https://github.com/gennariarmando/sire
 	
 	MIT License
 	
@@ -28,6 +28,7 @@
 #define SIRE_INCLUDE_DX9
 #define SIRE_INCLUDE_DX10
 #define SIRE_INCLUDE_DX11
+#define SIRE_INCLUDE_DX11ON12
 //#define SIRE_INCLUDE_DX12
 //#define SIRE_INCLUDE_OPENGL
 //#define SIRE_INCLUDE_VULKAN
@@ -62,6 +63,13 @@
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
+#ifdef SIRE_INCLUDE_DX11ON12
+#include <wrl.h>
+#include <d3d11on12.h>
+#include <dxgi1_4.h>
+using namespace Microsoft::WRL;
+using namespace DirectX;
+#endif
 #endif
 
 #ifdef SIRE_INCLUDE_DX12
@@ -88,6 +96,194 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 #pragma comment(lib, "vulkan-1.lib")
+#endif
+
+#ifdef SIRE_INCLUDE_DX11ON12
+namespace d3d11on12
+{
+	static inline bool isD3D11on12 = false;
+	static inline UINT bufferIndex = 0;
+	static inline UINT bufferCount = 0;
+	static inline DXGI_SWAP_CHAIN_DESC swapChainDesc;
+	static inline Microsoft::WRL::ComPtr<ID3D12Device> d3d12Device = nullptr;
+	static inline Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue = nullptr;
+	static inline std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> d3d12RenderTargets;
+	static inline std::vector<Microsoft::WRL::ComPtr<ID3D11RenderTargetView>> d3d11RenderTargetViews;
+	static inline std::vector<Microsoft::WRL::ComPtr<ID3D11Resource>> d3d11WrappedBackBuffers;
+	static inline Microsoft::WRL::ComPtr<IDXGISwapChain3> swapChain3 = nullptr;
+	static inline Microsoft::WRL::ComPtr<ID3D11Device> d3d11Device = nullptr;
+	static inline Microsoft::WRL::ComPtr<ID3D11On12Device> d3d11On12Device = nullptr;
+	static inline Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d11Context = nullptr;
+
+	static inline HRESULT RetrieveD3DDeviceFromSwapChain(IDXGISwapChain* pSwapChain)
+	{
+		HRESULT hr = pSwapChain->GetDevice(IID_PPV_ARGS(d3d11Device.GetAddressOf()));
+		if (SUCCEEDED(hr)) {
+			isD3D11on12 = false;
+			return hr;
+		}
+
+		hr = pSwapChain->GetDevice(IID_PPV_ARGS(d3d12Device.GetAddressOf()));
+		if (SUCCEEDED(hr)) {
+			isD3D11on12 = true;
+		}
+		return hr;
+	}
+
+	static inline BOOL WaitForCommandQueueIfRunningD3D12()
+	{
+		if (isD3D11on12 && commandQueue.Get() == nullptr) {
+			return TRUE;
+		}
+		return FALSE;
+	}
+
+	static inline HRESULT GetSwapChainDescription(IDXGISwapChain* pSwapChain)
+	{
+		ZeroMemory(&swapChainDesc, sizeof(DXGI_SWAP_CHAIN_DESC));
+		HRESULT hr = pSwapChain->GetDesc(&swapChainDesc);
+		if (SUCCEEDED(hr)) {
+			bufferCount = isD3D11on12 ? swapChainDesc.BufferCount : 1;
+		}
+		return hr;
+	}
+
+	static inline HRESULT CreateD3D11On12Device()
+	{
+		D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+		HRESULT hr = D3D11On12CreateDevice(
+			d3d12Device.Get(),
+			NULL,
+			&featureLevel,
+			1,
+			reinterpret_cast<IUnknown**>(commandQueue.GetAddressOf()),
+			1,
+			0,
+			d3d11Device.GetAddressOf(),
+			d3d11Context.GetAddressOf(),
+			nullptr);
+		if (FAILED(hr)) return hr;
+
+		return d3d11Device.As(&d3d11On12Device);
+	}
+
+	static inline HRESULT CreateD3D12RtvHeap(_Outptr_ ID3D12DescriptorHeap** ppRtvHeap)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+		rtvHeapDesc.NumDescriptors = bufferCount;
+		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		return d3d12Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(ppRtvHeap));
+	}
+
+	static inline HRESULT CreateD3D12RenderTargetView(IDXGISwapChain* pSwapChain, UINT bufferIndex, D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle)
+	{
+		HRESULT hr = pSwapChain->GetBuffer(bufferIndex, IID_PPV_ARGS(&d3d12RenderTargets[bufferIndex]));
+		if (FAILED(hr)) return hr;
+		d3d12Device->CreateRenderTargetView(d3d12RenderTargets[bufferIndex].Get(), nullptr, rtvHandle);
+		return S_OK;
+	}
+
+	static inline HRESULT CreateD3D11WrappedBackBuffer(UINT bufferIndex)
+	{
+		D3D11_RESOURCE_FLAGS d3d11Flags = { D3D11_BIND_RENDER_TARGET };
+		return d3d11On12Device->CreateWrappedResource(
+			d3d12RenderTargets[bufferIndex].Get(),
+			&d3d11Flags,
+			D3D12_RESOURCE_STATE_RENDER_TARGET,
+			D3D12_RESOURCE_STATE_PRESENT,
+			IID_PPV_ARGS(&d3d11WrappedBackBuffers[bufferIndex]));
+	}
+
+	static inline HRESULT CreateD3D11RenderTargetViewWithWrappedBackBuffer(UINT bufferIndex)
+	{
+		return d3d11Device->CreateRenderTargetView(
+			d3d11WrappedBackBuffers[bufferIndex].Get(),
+			nullptr,
+			d3d11RenderTargetViews[bufferIndex].GetAddressOf());
+	}
+
+	static inline HRESULT CreateD3D12Buffers(IDXGISwapChain* pSwapChain)
+	{
+		d3d12RenderTargets.resize(bufferCount);
+		d3d11WrappedBackBuffers.resize(bufferCount);
+		d3d11RenderTargetViews.resize(bufferCount);
+
+		ComPtr<ID3D12DescriptorHeap> rtvHeap;
+		HRESULT hr = CreateD3D12RtvHeap(rtvHeap.GetAddressOf());
+		if (FAILED(hr)) return hr;
+
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
+		UINT rtvDescriptorSize = d3d12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+		for (UINT i = 0; i < bufferCount; i++) {
+			hr = CreateD3D12RenderTargetView(pSwapChain, i, rtvHandle);
+			if (FAILED(hr)) return hr;
+
+			hr = CreateD3D11WrappedBackBuffer(i);
+			if (FAILED(hr)) return hr;
+
+			hr = CreateD3D11RenderTargetViewWithWrappedBackBuffer(i);
+			if (FAILED(hr)) return hr;
+
+			rtvHandle.ptr += rtvDescriptorSize;
+		}
+		return S_OK;
+	}
+
+	static inline HRESULT InitD3D12(IDXGISwapChain* pSwapChain)
+	{
+		HRESULT hr = CreateD3D11On12Device();
+		if (FAILED(hr)) return hr;
+
+		hr = pSwapChain->QueryInterface(IID_PPV_ARGS(&swapChain3));
+		if (FAILED(hr)) return hr;
+		return CreateD3D12Buffers(pSwapChain);
+	}
+
+	static inline BOOL InitD3D11on12Resources(IDXGISwapChain* swapChain)
+	{
+		HRESULT hr = RetrieveD3DDeviceFromSwapChain(swapChain);
+		if (FAILED(hr)) return FALSE;
+
+		if (WaitForCommandQueueIfRunningD3D12()) return FALSE;
+
+		hr = GetSwapChainDescription(swapChain);
+		if (FAILED(hr)) return FALSE;
+
+		hr = InitD3D12(swapChain);
+		if (FAILED(hr)) return FALSE;
+
+		return TRUE;
+	}
+
+	static inline void ReleaseViewsBuffersAndContext()
+	{
+		for (int i = 0; i < bufferCount; i++)
+		{
+			if (d3d12Device.Get() == nullptr)
+			{
+				d3d11RenderTargetViews[i].ReleaseAndGetAddressOf();
+			}
+			else
+			{
+				d3d11RenderTargetViews[i].ReleaseAndGetAddressOf();
+				d3d12RenderTargets[i].ReleaseAndGetAddressOf();
+				d3d11WrappedBackBuffers[i].ReleaseAndGetAddressOf();
+			}
+		}
+
+		if (d3d11Context.Get() != nullptr)
+		{
+			d3d11Context->Flush();
+		}
+	}
+
+	static inline void SetCommandQueue(ID3D12CommandQueue* cq)
+	{
+		commandQueue = cq;
+	}
+}
 #endif
 
 template <typename T>
@@ -1058,6 +1254,8 @@ private:
 			ZeroMemory(&swapChainDesc, sizeof(swapChainDesc));
 			swapchain->GetDesc(&swapChainDesc);
 
+			textureFormat = swapChainDesc.BufferDesc.Format;
+
 			hWnd = swapChainDesc.OutputWindow;
 
 			D3D10_BUFFER_DESC bufferDesc;
@@ -1596,15 +1794,32 @@ private:
 			HRESULT hResult = swapchain->GetDevice(__uuidof(ID3D11Device), (void**)&dev);
 
 			if (FAILED(hResult))
+			{
+				#ifdef SIRE_INCLUDE_DX11ON12
+				if (!d3d11on12::InitD3D11on12Resources(swapchain))
+					return;
+				else
+					dev = d3d11on12::d3d11Device.Get();
+				#else
 				return;
+				#endif
+			}
 
+			#ifdef SIRE_INCLUDE_DX11ON12
+			if (d3d11on12::isD3D11on12)
+				devcon = d3d11on12::d3d11Context.Get();
+			else
+				dev->GetImmediateContext(&devcon);
+			#else
 			dev->GetImmediateContext(&devcon);
+			#endif
 
 			DXGI_SWAP_CHAIN_DESC swapChainDesc;
 			ZeroMemory(&swapChainDesc, sizeof(swapChainDesc));
 			swapchain->GetDesc(&swapChainDesc);
 
 			hWnd = swapChainDesc.OutputWindow;
+			textureFormat = swapChainDesc.BufferDesc.Format;
 
 			D3D11_BUFFER_DESC bufferDesc;
 			ZeroMemory(&bufferDesc, sizeof(bufferDesc));
@@ -1671,7 +1886,15 @@ private:
 			// Grab render target or create one
 			devcon->OMGetRenderTargets(1, &renderTarget, nullptr);
 			if (!renderTarget) {
-				auto backBuffer = GetBackBuffer(0);
+				ID3D11Texture2D* backBuffer = nullptr;
+				#ifdef SIRE_INCLUDE_DX11ON12
+				if (d3d11on12::isD3D11on12)
+					backBuffer = GetBackBuffer(d3d11on12::bufferIndex);
+				else
+					backBuffer = GetBackBuffer(0);
+				#else
+				backBuffer = GetBackBuffer(0);
+				#endif
 				renderTarget = CreateRenderTarget(backBuffer);
 
 				devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
@@ -1742,8 +1965,16 @@ private:
 			devcon->IAGetInputLayout(&prevInputLayout);
 			devcon->IASetInputLayout(inputLayout);
 
+			#ifdef SIRE_INCLUDE_DX11ON12
+			if (!d3d11on12::isD3D11on12)
+			{
+				auto renderTarget = GetRenderTarget();
+				devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
+			}
+			#else
 			auto renderTarget = GetRenderTarget();
 			devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
+			#endif
 
 			ID3D11VertexShader* prevVertexShader = nullptr;
 			devcon->VSGetShader(&prevVertexShader, nullptr, 0);
@@ -1872,6 +2103,14 @@ private:
 
 			devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
 			Release(blendState);
+
+			#ifdef SIRE_INCLUDE_DX11ON12
+			if (d3d11on12::isD3D11on12)
+			{
+				d3d11on12::d3d11On12Device->ReleaseWrappedResources(d3d11on12::d3d11WrappedBackBuffers[d3d11on12::bufferIndex].GetAddressOf(), 1);
+				d3d11on12::d3d11Context->Flush();
+			}
+			#endif
 		}
 
 		void SetRenderStates(tRenderState const& s) override {
@@ -1956,7 +2195,14 @@ private:
 
 		ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
 			ID3D11Texture2D* out = nullptr;
+			#ifdef SIRE_INCLUDE_DX11ON12
+			if (d3d11on12::isD3D11on12)
+				d3d11on12::d3d11WrappedBackBuffers[d3d11on12::bufferIndex]->QueryInterface(__uuidof(ID3D11Texture2D), (void**)&out);
+			else
+				swapchain->GetBuffer(buffer, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&out));
+			#else
 			swapchain->GetBuffer(buffer, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&out));
+			#endif
 			return out;
 		}
 
@@ -2140,6 +2386,7 @@ private:
 			swapchain->GetDesc(&swapChainDesc);
 
 			hWnd = swapChainDesc.OutputWindow;
+			textureFormat = swapChainDesc.BufferDesc.Format;
 
 			D3D12_RESOURCE_DESC bufferDesc;
 			ZeroMemory(&bufferDesc, sizeof(bufferDesc));
@@ -2711,41 +2958,41 @@ private:
 	static inline tConstBuff cb = { {}, false, false };
 
 	static inline std::string glslShader3_3_0 = R"(
-    #version 330 core
+	#version 330 core
 
-    layout(std140) uniform ConstantBuffer
-    {
-        mat4 proj;
-        int hasTex;
-        int hasMask;
+	layout(std140) uniform ConstantBuffer
+	{
+		mat4 proj;
+		int hasTex;
+		int hasMask;
 		int swapColors;    
 	};
 
-    uniform sampler2D tex0;
-    uniform sampler2D mask0;
+	uniform sampler2D tex0;
+	uniform sampler2D mask0;
 
-    layout(location = 0) in vec4 position;
-    layout(location = 1) in vec4 color;
-    layout(location = 2) in vec2 uv0;
-    layout(location = 3) in vec2 uv1;
+	layout(location = 0) in vec4 position;
+	layout(location = 1) in vec4 color;
+	layout(location = 2) in vec2 uv0;
+	layout(location = 3) in vec2 uv1;
 
-    out vec4 FragColor;
+	out vec4 FragColor;
 
-    void main()
-    {
-        gl_Position = proj * position;
-        FragColor = color;
+	void main()
+	{
+		gl_Position = proj * position;
+		FragColor = color;
 
-        if (hasTex )
-        {
-            FragColor *= texture(tex0, uv0);
-            FragColor.a = max(FragColor.a, color.a);
-        }
+		if (hasTex )
+		{
+			FragColor *= texture(tex0, uv0);
+			FragColor.a = max(FragColor.a, color.a);
+		}
 
-        if (hasMask)
-        {
-            FragColor *= texture(mask0, uv1);
-        }
+		if (hasMask)
+		{
+			FragColor *= texture(mask0, uv1);
+		}
 
 		if (swapColors)
 		{	
@@ -2753,7 +3000,7 @@ private:
 			FragColor.r = FragColor.b;
 			FragColor.b = prev;
 		}
-    }
+	}
 	)";
 
 	static inline std::string hlslShader2_0 = R"(
@@ -2767,38 +3014,38 @@ private:
 	
 	struct VOut
 	{
-	    float4 position : POSITION;
-	    float4 color : COLOR;
-	    float2 uv0 : TEXCOORD0;
-	    float2 uv1 : TEXCOORD1;
+		float4 position : POSITION;
+		float4 color : COLOR;
+		float2 uv0 : TEXCOORD0;
+		float2 uv1 : TEXCOORD1;
 	};
 	
 	VOut VShader(float4 position : POSITION, float4 color : COLOR, float2 uv0 : TEXCOORD0, float2 uv1 : TEXCOORD1)
 	{
-	    VOut output;
+		VOut output;
 	
-	    output.position = mul(position, proj);
-	    output.color = color;
-	    output.uv0 = uv0;
-	    output.uv1 = uv1;
+		output.position = mul(position, proj);
+		output.color = color;
+		output.uv0 = uv0;
+		output.uv1 = uv1;
 	
-	    return output;
+		return output;
 	}
 	
 	float4 PShader(VOut input) : COLOR
 	{
-	    float4 c = input.color;
+		float4 c = input.color;
 
-	    if (hasTex)
-	    {   
-	        c *= tex2D(tex0, input.uv0);
-	        c.a = max(c.a, input.color.a);
-	    }
-	    
-	    if (hasMask)
-	    {
-	        c *= tex2D(mask0, input.uv1);
-	    }
+		if (hasTex)
+		{   
+			c *= tex2D(tex0, input.uv0);
+			c.a = max(c.a, input.color.a);
+		}
+		
+		if (hasMask)
+		{
+			c *= tex2D(mask0, input.uv1);
+		}
 
 		if (swapColors)
 		{	
@@ -2806,17 +3053,17 @@ private:
 			c.r = c.b;
 			c.b = prev;
 		}
-	    
-	    return c;
+		
+		return c;
 	}
 	)";
 
 	static inline std::string hlslShader4_0 = R"(
 	cbuffer ConstantBuffer : register(b0)
 	{
-	    matrix proj;
-	    int hasTex;
-	    int hasMask;
+		matrix proj;
+		int hasTex;
+		int hasMask;
 		int swapColors;
 	};
 	
@@ -2826,38 +3073,38 @@ private:
 	
 	struct VOut
 	{
-	    float4 position : POSITION;
-	    float4 color : COLOR;
-	    float2 uv0 : TEXCOORD0;
-	    float2 uv1 : TEXCOORD1;
+		float4 position : POSITION;
+		float4 color : COLOR;
+		float2 uv0 : TEXCOORD0;
+		float2 uv1 : TEXCOORD1;
 	};
 	
 	VOut VShader(float4 position : POSITION, float4 color : COLOR, float2 uv0 : TEXCOORD0, float2 uv1 : TEXCOORD1)
 	{
-	    VOut output;
+		VOut output;
 	
-	    output.position = mul(position, proj);
-	    output.color = color;
-	    output.uv0 = uv0;
-	    output.uv1 = uv1;
+		output.position = mul(position, proj);
+		output.color = color;
+		output.uv0 = uv0;
+		output.uv1 = uv1;
 	
-	    return output;
+		return output;
 	}
 	
 	float4 PShader(VOut input) : SV_Target
 	{
-	    float4 c = input.color;
+		float4 c = input.color;
 	
-	    if (hasTex)
-	    {
-	        c *= tex0.Sample(sampler0, input.uv0);
-	        c.a = max(c.a, input.color.a);
-	    }
+		if (hasTex)
+		{
+			c *= tex0.Sample(sampler0, input.uv0);
+			c.a = max(c.a, input.color.a);
+		}
 	
-	    if (hasMask)
-	    {
-	        c *= mask0.Sample(sampler0, input.uv1);
-	    }
+		if (hasMask)
+		{
+			c *= mask0.Sample(sampler0, input.uv1);
+		}
 
 		if (swapColors)
 		{	
@@ -2866,7 +3113,7 @@ private:
 			c.b = prev;
 		}
 	
-	    return c;
+		return c;
 	}
 	)";
 
@@ -2874,9 +3121,9 @@ private:
 	static inline std::string hlslShader5_0 = R"(
 	cbuffer ConstantBuffer : register(b0)
 	{
-	    matrix proj;
-	    int hasTex;
-	    int hasMask;
+		matrix proj;
+		int hasTex;
+		int hasMask;
 		int swapColors;
 	};
 	
@@ -2886,38 +3133,38 @@ private:
 	
 	struct VOut
 	{
-	    float4 position : SV_POSITION;
-	    float4 color : COLOR;
-	    float2 uv0 : TEXCOORD0;
-	    float2 uv1 : TEXCOORD1;
+		float4 position : SV_POSITION;
+		float4 color : COLOR;
+		float2 uv0 : TEXCOORD0;
+		float2 uv1 : TEXCOORD1;
 	};
 	
 	VOut VShader(float4 position : POSITION, float4 color : COLOR, float2 uv0 : TEXCOORD0, float2 uv1 : TEXCOORD1)
 	{
-	    VOut output;
+		VOut output;
 	
-	    output.position = mul(position, proj);
-	    output.color = color;
-	    output.uv0 = uv0;
-	    output.uv1 = uv1;
+		output.position = mul(position, proj);
+		output.color = color;
+		output.uv0 = uv0;
+		output.uv1 = uv1;
 	
-	    return output;
+		return output;
 	}
 	
 	float4 PShader(float4 position : SV_POSITION, float4 color : COLOR, float2 uv0 : TEXCOORD0, float2 uv1 : TEXCOORD1) : SV_TARGET
 	{
-	    float4 c = color;
+		float4 c = color;
 	
-	    if (hasTex)
-	    {   
-	        c *= tex0.Sample(sampler0, uv0);
-	        c.a = max(c.a, color.a);
-	    }
-	    
-	    if (hasMask)
-	    {
-	        c *= mask0.Sample(sampler0, uv1);
-	    }
+		if (hasTex)
+		{   
+			c *= tex0.Sample(sampler0, uv0);
+			c.a = max(c.a, color.a);
+		}
+		
+		if (hasMask)
+		{
+			c *= mask0.Sample(sampler0, uv1);
+		}
 
 		if (swapColors)
 		{	
@@ -2925,8 +3172,8 @@ private:
 			c.r = c.b;
 			c.b = prev;
 		}
-	    
-	    return c;
+		
+		return c;
 	}
 	)";
 
@@ -3183,6 +3430,11 @@ public:
 
 		currentRenderer = SIRE_RENDERER_NULL;
 		currentRendererMainPtr = nullptr;
+
+		#ifdef SIRE_INCLUDE_DX11ON12
+		if (d3d11on12::isD3D11on12)
+			d3d11on12::ReleaseViewsBuffersAndContext();
+		#endif
 	}
 
 	template<typename T>
@@ -3294,6 +3546,15 @@ public:
 		if (!IsRendererActive())
 			return nullptr;
 
+		#ifdef SIRE_INCLUDE_DX11ON12
+		if (d3d11on12::isD3D11on12)
+		{
+			d3d11on12::bufferIndex = d3d11on12::swapChain3->GetCurrentBackBufferIndex();
+			d3d11on12::d3d11On12Device->AcquireWrappedResources(d3d11on12::d3d11WrappedBackBuffers[d3d11on12::bufferIndex].GetAddressOf(), 1);
+			d3d11on12::d3d11Context->OMSetRenderTargets(1, d3d11on12::d3d11RenderTargetViews[d3d11on12::bufferIndex].GetAddressOf(), 0);
+		}
+		#endif
+
 		if (buffer == -1)
 			return GetFakeBackBuffer(0);
 
@@ -3355,6 +3616,12 @@ public:
 
 		GetRenderers(renderer)->SetTextureFormat(format);
 	}
+
+#ifdef SIRE_INCLUDE_DX11ON12
+	static inline void SetCommandQueue(ID3D12CommandQueue* pCommandQueue) {
+		d3d11on12::SetCommandQueue(pCommandQueue);
+	}
+#endif
 
 	static inline uint32_t GetTextureFormat(eSireRenderer renderer) {
 		if (!IsRendererActive(renderer))
