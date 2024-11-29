@@ -276,7 +276,20 @@ namespace d3d11on12
 		if (d3d11Context.Get() != nullptr)
 		{
 			d3d11Context->Flush();
+			d3d11Context.Reset();
 		}
+
+		if (d3d11On12Device)
+			d3d11On12Device.Reset();
+		if (swapChain3)
+			swapChain3.Reset();
+		if (d3d11Device)
+			d3d11Device.Reset();
+
+		// Reset state
+		bufferCount = 0;
+		bufferIndex = 0;
+		isD3D11on12 = false;
 	}
 
 	static inline void SetCommandQueue(ID3D12CommandQueue* cq)
@@ -1797,10 +1810,14 @@ private:
 			{
 				#ifdef SIRE_INCLUDE_DX11ON12
 				if (!d3d11on12::InitD3D11on12Resources(swapchain))
+				{
+					currentRenderer = SIRE_RENDERER_NULL;
 					return;
+				}
 				else
 					dev = d3d11on12::d3d11Device.Get();
 				#else
+				currentRenderer = SIRE_RENDERER_NULL;
 				return;
 				#endif
 			}
