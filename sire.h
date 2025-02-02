@@ -26,7 +26,7 @@
 */
 #pragma once
 // Usage: To use with a renderer define SIRE_XX before including this header file or uncomment below:
-//#define SIRE_INCLUDE_MINIMAL_DEFS
+//#define SIRE_INCLUDE_MINIMAL_DEPENDECIES
 //#define SIRE_DX9
 //#define SIRE_INCLUDE_DX9
 // 
