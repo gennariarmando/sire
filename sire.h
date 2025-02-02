@@ -4,7 +4,7 @@
 	
 	MIT License
 	
-	Copyright (c) 2023 _AG
+	Copyright (c) 2025 _AG
 	
 	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
@@ -25,17 +25,28 @@
 	SOFTWARE.
 */
 #pragma once
-#define SIRE_INCLUDE_DX9
-#define SIRE_INCLUDE_DX10
-#define SIRE_INCLUDE_DX11
-#define SIRE_INCLUDE_DX11ON12
+// Usage: To use with a renderer define SIRE_XX before including this header file or uncomment below:
+//#define SIRE_INCLUDE_MINIMAL_DEFS
+//#define SIRE_DX9
+//#define SIRE_INCLUDE_DX9
+// 
+//#define SIRE_DX10
+//#define SIRE_INCLUDE_DX10
+// 
+//#define SIRE_DX11
+//#define SIRE_INCLUDE_DX11
+// 
+//#define SIRE_DX11ON12
+//#define SIRE_INCLUDE_DX11ON12
+// 
+//#define SIRE_DX12
 //#define SIRE_INCLUDE_DX12
+// 
+//#define SIRE_OPENGL
 //#define SIRE_INCLUDE_OPENGL
-//#define SIRE_INCLUDE_VULKAN
 
-#include <iostream>
-#include <vector>
-#include <array>
+//#define SIRE_VULKAN
+//#define SIRE_INCLUDE_VULKAN
 
 #ifdef SIRE_INCLUDE_DX9
 #include <d3d9.h>
@@ -63,7 +74,7 @@
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
-#ifdef SIRE_INCLUDE_DX11ON12
+#ifdef SIRE_DX11ON12
 #include <wrl.h>
 #include <d3d11on12.h>
 #include <dxgi1_4.h>
@@ -98,7 +109,14 @@ using namespace DirectX;
 #pragma comment(lib, "vulkan-1.lib")
 #endif
 
-#ifdef SIRE_INCLUDE_DX11ON12
+#ifdef SIRE_INCLUDE_MINIMAL_DEPENDECIES
+#include <iostream>
+#include <vector>
+#include <array>
+#include <windef.h>
+#endif
+
+#ifdef SIRE_DX11ON12
 namespace d3d11on12
 {
 	static inline bool isD3D11on12 = false;
@@ -289,7 +307,9 @@ namespace d3d11on12
 template <typename T>
 class SirePtr {
 public:
-	SirePtr() : ptr(nullptr) {}
+	SirePtr() {
+		ptr = std::make_unique<T>();
+	}
 
 	SirePtr(T* p) : ptr(p) {}
 
@@ -415,24 +435,12 @@ public:
 
 	enum eSireRenderer {
 		SIRE_RENDERER_NULL = -1,
-#ifdef SIRE_INCLUDE_DX9
 		SIRE_RENDERER_DX9,
-#endif
-#ifdef SIRE_INCLUDE_DX10
 		SIRE_RENDERER_DX10,
-#endif
-#ifdef SIRE_INCLUDE_DX11
 		SIRE_RENDERER_DX11,
-#endif
-#ifdef SIRE_INCLUDE_DX12
 		SIRE_RENDERER_DX12,
-#endif
-#ifdef SIRE_INCLUDE_OPENGL
 		SIRE_RENDERER_OPENGL,
-#endif
-#ifdef SIRE_INCLUDE_VULKAN
 		SIRE_RENDERER_VULKAN,
-#endif
 		SIRE_NUM_RENDERERS,
 	};
 
@@ -474,24 +482,30 @@ public:
 			void Release() {
 				if (GetCurrentRenderer() == owner) {
 					switch (GetCurrentRenderer()) {
+#ifdef SIRE_DX9
 					case SIRE_RENDERER_DX9: {
 						IDirect3DTexture9* tex = reinterpret_cast<IDirect3DTexture9*>(texture);
 						IDirect3DSurface9* surf = reinterpret_cast<IDirect3DSurface9*>(surface);
 						Sire::Release(tex);
 						Sire::Release(surf);
 					} break;
+#endif
+#ifdef SIRE_DX10
 					case SIRE_RENDERER_DX10: {
 						ID3D10ShaderResourceView* tex = reinterpret_cast<ID3D10ShaderResourceView*>(texture);
 						ID3D10Texture2D* surf = reinterpret_cast<ID3D10Texture2D*>(surface);
 						Sire::Release(tex);
 						Sire::Release(surf);
 					} break;
+#endif
+#ifdef SIRE_DX11
 					case SIRE_RENDERER_DX11: {
 						ID3D11ShaderResourceView* tex = reinterpret_cast<ID3D11ShaderResourceView*>(texture);
 						ID3D11Texture2D* surf = reinterpret_cast<ID3D11Texture2D*>(surface);
 						Sire::Release(tex);
 						Sire::Release(surf);
 					} break;
+#endif
 					}
 				}
 
@@ -649,6 +663,7 @@ private:
 			std::swap(_34, _43);
 		}
 
+#ifdef SIRE_DX9
 		D3DXMATRIX ToD3DXMATRIX() {
 			D3DXMATRIX out = {};
 			out._11 = _11;
@@ -672,6 +687,7 @@ private:
 			out._44 = _44;
 			return out;
 		}
+#endif
 
 		std::array<float, 16> ToFloatArray() {
 			std::array<float, 16> out = {};
@@ -770,6 +786,10 @@ private:
 		virtual void Unlock(void* ptr) {}
 		virtual void SetTextureFormat(uint32_t format) { textureFormat = format; }
 		virtual uint32_t GetTextureFormat() { return textureFormat; }
+		virtual void SetPixelShader(uintptr_t* ps) {}
+		virtual void SetVertexShader(uintptr_t* vs) {}
+		virtual uintptr_t* CreatePixelShader(std::string const& shaderCode, const char* targetVersion = "ps_3_0") { return nullptr; }
+		virtual uintptr_t* CreateVertexShader(std::string const& shaderCode, const char* targetVersion = "vs_3_0") { return nullptr; }
 
 		SireRenderer() {
 			initialised = false;
@@ -782,6 +802,7 @@ private:
 		}
 	};
 
+#ifdef SIRE_DX9
 	struct SireDirectX9 : SireRenderer {
 		IDirect3DDevice9* dev;
 		IDirect3DVertexBuffer9* vb;
@@ -1045,6 +1066,24 @@ private:
 			reinterpret_cast<IDirect3DSurface9*>(ptr)->UnlockRect();
 		}
 
+		void SetPixelShader(uintptr_t* ps) override {
+			pixelShader = (IDirect3DPixelShader9*)ps;
+		}
+
+		void SetVertexShader(uintptr_t* vs) override {
+			vertexShader = (IDirect3DVertexShader9*)vs;
+		}
+
+		uintptr_t* CreatePixelShader(std::string const& shaderCode, const char* targetVer) override {
+			ID3DXBuffer* buf = CompileShader(shaderCode, "main", targetVer);
+			return (uintptr_t*)CreatePixelShader(buf->GetBufferPointer(), buf->GetBufferSize());
+		}
+
+		uintptr_t* CreateVertexShader(std::string const& shaderCode, const char* targetVer) override {
+			ID3DXBuffer* buf = CompileShader(shaderCode, "main", targetVer);
+			return (uintptr_t*)CreateVertexShader(buf->GetBufferPointer(), buf->GetBufferSize());
+		}
+
 		// End virtual override
 
 		IDirect3DSurface9* GetRenderTarget() {
@@ -1180,7 +1219,9 @@ private:
 			return out;
 		}
 	};
+#endif
 
+#ifdef SIRE_DX10
 	struct SireDirectX10 : SireRenderer {
 		IDXGISwapChain* swapchain;
 		ID3D10Device* dev;
@@ -1594,6 +1635,24 @@ private:
 			reinterpret_cast<ID3D10Texture2D*>(ptr)->Unmap(0);
 		}
 
+		void SetPixelShader(uintptr_t* ps) override {
+			pixelShader = (ID3D10PixelShader*)ps;
+		}
+
+		void SetVertexShader(uintptr_t* vs) override {
+			vertexShader = (ID3D10VertexShader*)vs;
+		}
+
+		uintptr_t* CreatePixelShader(std::string const& shaderCode) override {
+			ID3DBlob* buf = CompileShader(shaderCode, "main", "ps_3_0");
+			return (uintptr_t*)CreatePixelShader(buf->GetBufferPointer(), buf->GetBufferSize());
+		}
+
+		uintptr_t* CreateVertexShader(std::string const& shaderCode) override {
+			ID3DBlob* buf = CompileShader(shaderCode, "main", "ps_3_0");
+			return (uintptr_t*)CreateVertexShader(buf->GetBufferPointer(), buf->GetBufferSize());
+		}
+
 		// End virtual override	
 
 		ID3D10RenderTargetView** GetRenderTargets() {
@@ -1724,7 +1783,9 @@ private:
 			return out;
 		}
 	};
+#endif
 
+#ifdef SIRE_DX11
 	struct SireDirectX11 : SireRenderer {
 		IDXGISwapChain* swapchain;
 		ID3D11Device* dev;
@@ -1795,7 +1856,7 @@ private:
 
 			if (FAILED(hResult))
 			{
-				#ifdef SIRE_INCLUDE_DX11ON12
+				#ifdef SIRE_DX11ON12
 				if (!d3d11on12::InitD3D11on12Resources(swapchain))
 					return;
 				else
@@ -1805,7 +1866,7 @@ private:
 				#endif
 			}
 
-			#ifdef SIRE_INCLUDE_DX11ON12
+			#ifdef SIRE_DX11ON12
 			if (d3d11on12::isD3D11on12)
 				devcon = d3d11on12::d3d11Context.Get();
 			else
@@ -1887,7 +1948,7 @@ private:
 			devcon->OMGetRenderTargets(1, &renderTarget, nullptr);
 			if (!renderTarget) {
 				ID3D11Texture2D* backBuffer = nullptr;
-				#ifdef SIRE_INCLUDE_DX11ON12
+				#ifdef SIRE_DX11ON12
 				if (d3d11on12::isD3D11on12)
 					backBuffer = GetBackBuffer(d3d11on12::bufferIndex);
 				else
@@ -1965,7 +2026,7 @@ private:
 			devcon->IAGetInputLayout(&prevInputLayout);
 			devcon->IASetInputLayout(inputLayout);
 
-			#ifdef SIRE_INCLUDE_DX11ON12
+			#ifdef SIRE_DX11ON12
 			if (!d3d11on12::isD3D11on12)
 			{
 				auto renderTarget = GetRenderTarget();
@@ -2104,7 +2165,7 @@ private:
 			devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
 			Release(blendState);
 
-			#ifdef SIRE_INCLUDE_DX11ON12
+			#ifdef SIRE_DX11ON12
 			if (d3d11on12::isD3D11on12)
 			{
 				d3d11on12::d3d11On12Device->ReleaseWrappedResources(d3d11on12::d3d11WrappedBackBuffers[d3d11on12::bufferIndex].GetAddressOf(), 1);
@@ -2181,6 +2242,24 @@ private:
 			devcon->Unmap(reinterpret_cast<ID3D11Texture2D*>(ptr), 0);
 		}
 
+		void SetPixelShader(uintptr_t* ps) override {
+			pixelShader = (ID3D11PixelShader*)ps;
+		}
+
+		void SetVertexShader(uintptr_t* vs) override {
+			vertexShader = (ID3D11VertexShader*)vs;
+		}
+
+		uintptr_t* CreatePixelShader(std::string const& shaderCode, const char* targetVersion = "ps_3_0") override {
+			ID3DBlob* buf = CompileShader(shaderCode, "main", "ps_3_0");
+			return (uintptr_t*)CreatePixelShader(buf->GetBufferPointer(), buf->GetBufferSize());
+		}
+
+		uintptr_t* CreateVertexShader(std::string const& shaderCode, const char* targetVersion = "ps_3_0") override {
+			ID3DBlob* buf = CompileShader(shaderCode, "main", "ps_3_0");
+			return (uintptr_t*)CreateVertexShader(buf->GetBufferPointer(), buf->GetBufferSize());
+		}
+
 		// End virtual override
 
 		ID3D11RenderTargetView** GetRenderTargets() {
@@ -2195,7 +2274,7 @@ private:
 
 		ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
 			ID3D11Texture2D* out = nullptr;
-			#ifdef SIRE_INCLUDE_DX11ON12
+			#ifdef SIRE_DX11ON12
 			if (d3d11on12::isD3D11on12)
 				d3d11on12::d3d11WrappedBackBuffers[d3d11on12::bufferIndex]->QueryInterface(__uuidof(ID3D11Texture2D), (void**)&out);
 			else
@@ -2319,8 +2398,9 @@ private:
 		}
 
 	};
+#endif
 
-#ifdef SIRE_INCLUDE_DX12
+#ifdef SIRE_DX12
 	struct SireDirectX12 : SireRenderer {
 		IDXGISwapChain* swapchain;
 		ID3D12Device* dev;
@@ -2543,6 +2623,14 @@ private:
 
 		}
 
+		void SetPixelShader(uintptr_t* ps) override {
+
+		}
+
+		void SetVertexShader(uintptr_t* vs) override {
+
+		}
+
 		// End virtual override
 
 		ID3DBlob* CompileShader(std::string const str, const char* szEntrypoint, const char* szTarget) {
@@ -2570,7 +2658,7 @@ private:
 
 #endif
 
-#ifdef SIRE_INCLUDE_OPENGL
+#ifdef SIRE_OPENGL
 	struct SireOpenGL : SireRenderer {
 		HDC con;
 		HGLRC conres;
@@ -2770,6 +2858,7 @@ private:
 		}
 
 		// End virtual override
+
 		uint32_t SireFillMode(int8_t mode) {
 			switch (mode) {
 			case SIRE_FILL_WIREFRAME:
@@ -2886,7 +2975,7 @@ private:
 
 #endif
 
-#ifdef SIRE_INCLUDE_VULKAN
+#ifdef SIRE_VULKAN
 	struct SireVulkan : SireRenderer {
 		SireVulkan() {
 
@@ -3341,6 +3430,32 @@ public:
 		}
 	}
 
+	static inline void SetPixelShader(uintptr_t* ps) {
+		if (!IsRendererActive())
+			return;
+
+		GetRenderers(GetCurrentRenderer())->SetPixelShader(ps);
+	}
+
+	static inline void SetVertexShader(uintptr_t* vs) {
+		if (!IsRendererActive())
+			return;
+
+		GetRenderers(GetCurrentRenderer())->SetVertexShader(vs);
+	}
+
+	static inline void SetTextureStage(uint32_t stage, SirePtr<tSireTexture2D> texture) {
+
+	}
+
+	static inline void SetShaderConstantFloat() {
+
+	}
+
+	static inline void SetShaderConstantInt() {
+
+	}
+
 	template <typename T>
 	static inline void Init(eSireRenderer re, T* ptr) {
 		if (currentRenderer != SIRE_RENDERER_NULL)
@@ -3359,32 +3474,32 @@ public:
 				switch (re) {
 				case SIRE_RENDERER_NULL:
 					break;
-#ifdef SIRE_INCLUDE_DX9
+#ifdef SIRE_DX9
 				case SIRE_RENDERER_DX9:
 					renderer = new SireDirectX9();
 					break;
 #endif
-#ifdef SIRE_INCLUDE_DX10
+#ifdef SIRE_DX10
 				case SIRE_RENDERER_DX10:
 					renderer = new SireDirectX10();
 					break;
 #endif
-#ifdef SIRE_INCLUDE_DX11
+#ifdef SIRE_DX11
 				case SIRE_RENDERER_DX11:
 					renderer = new SireDirectX11();
 					break;
 #endif
-#ifdef SIRE_INCLUDE_DX12
+#ifdef SIRE_DX12
 				case SIRE_RENDERER_DX12:
 					renderer = new SireDirectX12();
 					break;
 #endif
-#ifdef SIRE_INCLUDE_OPENGL
+#ifdef SIRE_OPENGL
 				case SIRE_RENDERER_OPENGL:
 					renderer = new SireOpenGL();
 					break;
 #endif
-#ifdef SIRE_INCLUDE_VULKAN
+#ifdef SIRE_VULKAN
 				case SIRE_RENDERER_VULKAN:
 					renderer = new SireVulkan();
 					break;
@@ -3431,7 +3546,7 @@ public:
 		currentRenderer = SIRE_RENDERER_NULL;
 		currentRendererMainPtr = nullptr;
 
-		#ifdef SIRE_INCLUDE_DX11ON12
+		#ifdef SIRE_DX11ON12
 		if (d3d11on12::isD3D11on12)
 			d3d11on12::ReleaseViewsBuffersAndContext();
 		#endif
@@ -3451,7 +3566,7 @@ public:
 
 	static inline tSireInt2 GetWindowSize() {
 		RECT windowRect;
-		GetClientRect(GetHWND(), &windowRect);
+		GetClientRect((HWND)GetHWND(), &windowRect);
 
 		tSireInt2 out;
 		out.x = static_cast<int32_t>(windowRect.right - windowRect.left);
@@ -3546,7 +3661,7 @@ public:
 		if (!IsRendererActive())
 			return nullptr;
 
-		#ifdef SIRE_INCLUDE_DX11ON12
+		#ifdef SIRE_DX11ON12
 		if (d3d11on12::isD3D11on12)
 		{
 			d3d11on12::bufferIndex = d3d11on12::swapChain3->GetCurrentBackBufferIndex();
@@ -3561,14 +3676,14 @@ public:
 		SirePtr<tSireTexture2D> out(new tSireTexture2D);
 
 		switch (GetCurrentRenderer()) {
-#ifdef SIRE_INCLUDE_DX9
+#ifdef SIRE_DX9
 		case SIRE_RENDERER_DX9: {
 			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetBackBufferSurface(buffer);
 			auto desc = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetDesc(result);
 			out->Set(desc.Width, desc.Height, desc.Format, nullptr, reinterpret_cast<uintptr_t*>(result));
 		} break;
 #endif
-#ifdef SIRE_INCLUDE_DX10
+#ifdef SIRE_DX10
 		case SIRE_RENDERER_DX10: {
 			auto tex = GetRenderers<SireDirectX10>(GetCurrentRenderer())->GetBackBuffer(buffer);
 
@@ -3582,7 +3697,7 @@ public:
 			}
 		} break;
 #endif
-#ifdef SIRE_INCLUDE_DX11
+#ifdef SIRE_DX11
 		case SIRE_RENDERER_DX11: {
 			auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetBackBuffer(buffer);
 
@@ -3596,11 +3711,11 @@ public:
 			}
 		} break;
 #endif
-#ifdef SIRE_INCLUDE_DX12
+#ifdef SIRE_DX12
 		case SIRE_RENDERER_DX12: {
 		} break;
 #endif
-#ifdef SIRE_INCLUDE_OPENGL
+#ifdef SIRE_OPENGL
 		case SIRE_RENDERER_OPENGL: {
 		} break;
 #endif
@@ -3617,7 +3732,7 @@ public:
 		GetRenderers(renderer)->SetTextureFormat(format);
 	}
 
-#ifdef SIRE_INCLUDE_DX11ON12
+#ifdef SIRE_DX11ON12
 	static inline void SetCommandQueue(ID3D12CommandQueue* pCommandQueue) {
 		d3d11on12::SetCommandQueue(pCommandQueue);
 	}
@@ -3637,7 +3752,7 @@ public:
 		SirePtr<tSireTexture2D> out(new tSireTexture2D);
 
 		switch (GetCurrentRenderer()) {
-#ifdef SIRE_INCLUDE_DX9
+#ifdef SIRE_DX9
 		case SIRE_RENDERER_DX9: {
 			IDirect3DSurface9* sout = nullptr;
 			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->CreateTexture(width, height, pixels, &sout);
@@ -3646,7 +3761,7 @@ public:
 				out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(sout));
 		} break;
 #endif
-#ifdef SIRE_INCLUDE_DX10
+#ifdef SIRE_DX10
 		case SIRE_RENDERER_DX10: {
 			auto tex = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
 
@@ -3658,7 +3773,7 @@ public:
 			}
 		} break;
 #endif
-#ifdef SIRE_INCLUDE_DX11
+#ifdef SIRE_DX11
 		case SIRE_RENDERER_DX11: {
 			auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
 
@@ -3670,11 +3785,11 @@ public:
 			}
 		} break;
 #endif
-#ifdef SIRE_INCLUDE_DX12
+#ifdef SIRE_DX12
 		case SIRE_RENDERER_DX12:
 			break;
 #endif
-#ifdef SIRE_INCLUDE_OPENGL
+#ifdef SIRE_OPENGL
 		case SIRE_RENDERER_OPENGL: {
 		} break;
 #endif
@@ -3744,6 +3859,25 @@ public:
 
 		return GetRenderers(GetCurrentRenderer())->SetTexture(tex0, tex1);
 	}
+
+	static inline void DrawTriangle(tSireFloat4 const& rect) {
+		if (!IsRendererActive())
+			return;
+
+		Sire::Begin(SIRE_TRIANGLE);
+
+		Sire::SetTexCoords2f(0.0f, 1.0f);
+		Sire::SetVertex2f(rect.x, rect.w);
+
+		Sire::SetTexCoords2f(1.0f, 1.0f);
+		Sire::SetVertex2f(rect.z, rect.w);
+
+		Sire::SetTexCoords2f(0.5f, 0.0f);
+		Sire::SetVertex2f((rect.x + rect.z) / 2.0f, rect.y);
+
+		Sire::End();
+	}
+
 
 	static inline void DrawRect(tSireFloat4 const& rect) {
 		if (!IsRendererActive())
