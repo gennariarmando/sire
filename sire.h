@@ -24,7 +24,6 @@
 	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 	SOFTWARE.
 */
-#pragma once
 // Usage: To use with a renderer define SIRE_XX before including this header file or uncomment below:
 //#define SIRE_INCLUDE_MINIMAL_DEPENDECIES
 //#define SIRE_DX9
@@ -47,6 +46,8 @@
 
 //#define SIRE_VULKAN
 //#define SIRE_INCLUDE_VULKAN
+
+#pragma once
 
 #ifdef SIRE_INCLUDE_DX9
 #include <d3d9.h>
