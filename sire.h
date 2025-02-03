@@ -3534,18 +3534,21 @@ public:
 
 		GetRenderers(GetCurrentRenderer())->Init(currentRendererMainPtr);
 
-        SetRenderState(Sire::SIRE_BLEND_ALPHATESTENABLE, true);
-        SetRenderState(Sire::SIRE_BLEND_SRCBLEND, Sire::SIRE_BLEND_SRC_ALPHA);
-        SetRenderState(Sire::SIRE_BLEND_DESTBLEND, Sire::SIRE_BLEND_INV_SRC_ALPHA);
-        SetRenderState(Sire::SIRE_BLEND_BLENDOP, Sire::SIRE_BLEND_OP_ADD);
-        SetRenderState(Sire::SIRE_BLEND_SRCBLENDALPHA, Sire::SIRE_BLEND_ONE);
-        SetRenderState(Sire::SIRE_BLEND_DESTBLENDALPHA, Sire::SIRE_BLEND_ZERO);
-        SetRenderState(Sire::SIRE_BLEND_BLENDOPALPHA, Sire::SIRE_BLEND_OP_ADD);
-        SetRenderState(Sire::SIRE_BLEND_WRITEMASK, Sire::SIRE_COLOR_WRITE_ENABLE_ALL);
-        SetRenderState(Sire::SIRE_BLEND_CULLMODE, Sire::SIRE_CULL_NONE);
-        SetRenderState(Sire::SIRE_BLEND_FILLMODE, Sire::SIRE_FILL_SOLID);
-        SetRenderState(Sire::SIRE_BLEND_STENCILENABLE, FALSE);
-        SetRenderState(Sire::SIRE_BLEND_COLORWRITEENABLE, 0xFFFFFFFF);
+        SetRenderState(SIRE_BLEND_ALPHATESTENABLE, true);
+        SetRenderState(SIRE_BLEND_SRCBLEND, SIRE_BLEND_SRC_ALPHA);
+        SetRenderState(SIRE_BLEND_DESTBLEND, SIRE_BLEND_INV_SRC_ALPHA);
+        SetRenderState(SIRE_BLEND_BLENDOP, SIRE_BLEND_OP_ADD);
+        SetRenderState(SIRE_BLEND_SRCBLENDALPHA, SIRE_BLEND_ONE);
+        SetRenderState(SIRE_BLEND_DESTBLENDALPHA, SIRE_BLEND_ZERO);
+        SetRenderState(SIRE_BLEND_BLENDOPALPHA, SIRE_BLEND_OP_ADD);
+        SetRenderState(SIRE_BLEND_WRITEMASK, SIRE_COLOR_WRITE_ENABLE_ALL);
+        SetRenderState(SIRE_BLEND_CULLMODE, SIRE_CULL_NONE);
+        SetRenderState(SIRE_BLEND_FILLMODE, SIRE_FILL_SOLID);
+        SetRenderState(SIRE_BLEND_STENCILENABLE, FALSE);
+        SetRenderState(SIRE_BLEND_COLORWRITEENABLE, 0xFFFFFFFF);
+
+		auto windowSize = GetWindowSize();
+		SetViewport(0.0f, 0.0f, static_cast<float>(windowSize.x), static_cast<float>(windowSize.y));
 	}
 
 	static inline void Shutdown() {
@@ -3612,12 +3615,12 @@ public:
 
 		std::vector<uint8_t> resizedPixels(dstWidth * dstHeight * 4, 0);
 
-		for (int32_t y = 0; y < dstHeight; ++y) {
-			for (int32_t x = 0; x < dstWidth; ++x) {
-				int srcX = static_cast<int>(x / scaleX);
-				int srcY = static_cast<int>(y / scaleY);
-				int srcIndex = (srcY * srcWidth + srcX) * 4;
-				int dstIndex = (y * dstWidth + x) * 4;
+		for (uint32_t y = 0; y < dstHeight; ++y) {
+			for (uint32_t x = 0; x < dstWidth; ++x) {
+				uint32_t srcX = static_cast<int>(x / scaleX);
+				uint32_t srcY = static_cast<int>(y / scaleY);
+				uint32_t srcIndex = (srcY * srcWidth + srcX) * 4;
+				uint32_t dstIndex = (y * dstWidth + x) * 4;
 
 				if (srcX < srcWidth && srcY < srcHeight) {
 					resizedPixels[dstIndex] = srcPixels[srcIndex];
