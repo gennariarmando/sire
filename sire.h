@@ -1657,13 +1657,13 @@ private:
 			vertexShader = (ID3D10VertexShader*)vs;
 		}
 
-		uintptr_t* CreatePixelShader(std::string const& shaderCode) override {
-			ID3DBlob* buf = CompileShader(shaderCode, "main", "ps_3_0");
+		uintptr_t* CreatePixelShader(std::string const& shaderCode, const char* targetVersion) override {
+			ID3DBlob* buf = CompileShader(shaderCode, "main", targetVersion);
 			return (uintptr_t*)CreatePixelShader(buf->GetBufferPointer(), buf->GetBufferSize());
 		}
 
-		uintptr_t* CreateVertexShader(std::string const& shaderCode) override {
-			ID3DBlob* buf = CompileShader(shaderCode, "main", "ps_3_0");
+		uintptr_t* CreateVertexShader(std::string const& shaderCode, const char* targetVersion) override {
+			ID3DBlob* buf = CompileShader(shaderCode, "main", targetVersion);
 			return (uintptr_t*)CreateVertexShader(buf->GetBufferPointer(), buf->GetBufferSize());
 		}
 
@@ -2268,13 +2268,13 @@ private:
 			vertexShader = (ID3D11VertexShader*)vs;
 		}
 
-		uintptr_t* CreatePixelShader(std::string const& shaderCode, const char* targetVersion = "ps_3_0") override {
-			ID3DBlob* buf = CompileShader(shaderCode, "main", "ps_3_0");
+		uintptr_t* CreatePixelShader(std::string const& shaderCode, const char* targetVersion) override {
+			ID3DBlob* buf = CompileShader(shaderCode, "main", targetVersion);
 			return (uintptr_t*)CreatePixelShader(buf->GetBufferPointer(), buf->GetBufferSize());
 		}
 
-		uintptr_t* CreateVertexShader(std::string const& shaderCode, const char* targetVersion = "ps_3_0") override {
-			ID3DBlob* buf = CompileShader(shaderCode, "main", "ps_3_0");
+		uintptr_t* CreateVertexShader(std::string const& shaderCode, const char* targetVersion) override {
+			ID3DBlob* buf = CompileShader(shaderCode, "main", targetVersion);
 			return (uintptr_t*)CreateVertexShader(buf->GetBufferPointer(), buf->GetBufferSize());
 		}
 
