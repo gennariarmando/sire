@@ -1256,7 +1256,6 @@ private:
 		FLOAT blendFactor[4];
 		UINT sampleMask;
 		UINT stencilRef;
-		ID3D10RenderTargetView* renderTarget;
 
 		// Start virtual override
 		SireDirectX10() : SireRenderer() {
@@ -1282,7 +1281,6 @@ private:
 			blendFactor[3] = 0.0f;
 			sampleMask = 0;
 			stencilRef = 0;
-			renderTarget = nullptr;
 			textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 		}
 
@@ -1374,16 +1372,6 @@ private:
 
 			Release(VS);
 			Release(PS);
-
-			// Grab render target or create one
-			dev->OMGetRenderTargets(1, &renderTarget, nullptr);
-			if (!renderTarget) {
-				auto backBuffer = GetBackBuffer(0);
-				renderTarget = CreateRenderTarget(backBuffer);
-
-				dev->OMSetRenderTargets(1, &renderTarget, nullptr);
-				Release(backBuffer);
-			}
 
 			initialised = true;
 		}
@@ -1676,7 +1664,9 @@ private:
 		}
 
 		ID3D10RenderTargetView* GetRenderTarget() {
-			return renderTarget;
+            ID3D10RenderTargetView* out = nullptr;
+            devcon->OMGetRenderTargets(1, &out, nullptr);
+            return out;
 		}
 
 		ID3D10Texture2D* GetBackBuffer(uint32_t buffer) {
@@ -1821,7 +1811,6 @@ private:
 		FLOAT blendFactor[4];
 		UINT sampleMask;
 		UINT stencilRef;
-		ID3D11RenderTargetView* renderTarget;
 
 		SireDirectX11() : SireRenderer() {
 			swapchain = nullptr;
@@ -1847,7 +1836,6 @@ private:
 			blendFactor[3] = 0.0f;
 			sampleMask = 0;
 			stencilRef = 0;
-			renderTarget = nullptr;
 			textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 		}
 
@@ -1961,24 +1949,6 @@ private:
 
 			Release(VS);
 			Release(PS);
-
-			// Grab render target or create one
-			devcon->OMGetRenderTargets(1, &renderTarget, nullptr);
-			if (!renderTarget) {
-				ID3D11Texture2D* backBuffer = nullptr;
-				#ifdef SIRE_DX11ON12
-				if (d3d11on12::isD3D11on12)
-					backBuffer = GetBackBuffer(d3d11on12::bufferIndex);
-				else
-					backBuffer = GetBackBuffer(0);
-				#else
-				backBuffer = GetBackBuffer(0);
-				#endif
-				renderTarget = CreateRenderTarget(backBuffer);
-
-				devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
-				Release(backBuffer);
-			}
 
 			initialised = true;
 		}
@@ -2287,7 +2257,9 @@ private:
 		}
 
 		ID3D11RenderTargetView* GetRenderTarget() {
-			return renderTarget;
+            ID3D11RenderTargetView* out = nullptr;
+            devcon->OMGetRenderTargets(1, &out, nullptr);
+            return out;
 		}
 
 		ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
