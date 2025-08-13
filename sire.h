@@ -1663,9 +1663,9 @@ private:
 		}
 
 		ID3D10RenderTargetView* GetRenderTarget() {
-            ID3D10RenderTargetView* out = nullptr;
-            devcon->OMGetRenderTargets(1, &out, nullptr);
-            return out;
+			ID3D10RenderTargetView* out = nullptr;
+			dev->OMGetRenderTargets(1, &out, nullptr);
+			return out;
 		}
 
 		ID3D10Texture2D* GetBackBuffer(uint32_t buffer) {
