@@ -1387,7 +1387,6 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
-			Release(renderTarget);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
@@ -1964,7 +1963,6 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
-			Release(renderTarget);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
