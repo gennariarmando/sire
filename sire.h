@@ -1442,6 +1442,9 @@ private:
 			dev->IAGetInputLayout(&prevInputLayout);
 			dev->IASetInputLayout(inputLayout);
 
+			auto prevRenderTarget = GetRenderTargets()[0];
+			auto prevStencilView = GetDepthStencilViews()[0];
+
 			auto renderTarget = GetRenderTarget();
 			dev->OMSetRenderTargets(1, &renderTarget, nullptr);
 
@@ -1523,6 +1526,10 @@ private:
 			dev->DrawIndexed(numIndices, 0, 0);
 
 			// Restore shit
+			dev->OMSetRenderTargets(1, &prevRenderTarget, prevStencilView);
+			Release(prevRenderTarget);
+			Release(prevStencilView);
+
 			dev->IASetInputLayout(prevInputLayout);
 			Release(prevInputLayout);
 
@@ -1666,8 +1673,17 @@ private:
 		// End virtual override	
 
 		ID3D10RenderTargetView** GetRenderTargets() {
-			ID3D10RenderTargetView* out[D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			static ID3D10RenderTargetView* out[D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			memset(out, 0, sizeof(out));
 			dev->OMGetRenderTargets(D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT, out, nullptr);
+			return out;
+		}
+
+		ID3D10DepthStencilView** GetDepthStencilViews() {
+			static ID3D10RenderTargetView* dummy[D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			static ID3D10DepthStencilView* out[D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			memset(out, 0, sizeof(out));
+			dev->OMGetRenderTargets(D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT, dummy, out);
 			return out;
 		}
 
@@ -2034,6 +2050,9 @@ private:
 			devcon->IAGetInputLayout(&prevInputLayout);
 			devcon->IASetInputLayout(inputLayout);
 
+			auto prevRenderTarget = GetRenderTargets()[0];
+			auto prevStencilView = GetDepthStencilViews()[0];
+
 			#ifdef SIRE_DX11ON12
 			if (!d3d11on12::isD3D11on12)
 			{
@@ -2123,6 +2142,10 @@ private:
 			devcon->DrawIndexed(numIndices, 0, 0);
 
 			// Restore shit
+			devcon->OMSetRenderTargets(1, &prevRenderTarget, prevStencilView);
+			Release(prevRenderTarget);
+			Release(prevStencilView);
+
 			devcon->IASetInputLayout(prevInputLayout);
 			Release(prevInputLayout);
 
@@ -2271,8 +2294,17 @@ private:
 		// End virtual override
 
 		ID3D11RenderTargetView** GetRenderTargets() {
-			ID3D11RenderTargetView* out[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			static ID3D11RenderTargetView* out[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			memset(out, 0, sizeof(out));
 			devcon->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, out, nullptr);
+			return out;
+		}
+
+		ID3D11DepthStencilView** GetDepthStencilViews() {
+			static ID3D11RenderTargetView* dummy[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			static ID3D11DepthStencilView* out[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+			memset(out, 0, sizeof(out));
+			devcon->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, dummy, out);
 			return out;
 		}
 
