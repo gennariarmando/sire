@@ -1256,6 +1256,7 @@ private:
 		FLOAT blendFactor[4];
 		UINT sampleMask;
 		UINT stencilRef;
+		ID3D10RenderTargetView* renderTarget;
 
 		// Start virtual override
 		SireDirectX10() : SireRenderer() {
@@ -1281,6 +1282,7 @@ private:
 			blendFactor[3] = 0.0f;
 			sampleMask = 0;
 			stencilRef = 0;
+			renderTarget = nullptr;
 			textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 		}
 
@@ -1373,6 +1375,12 @@ private:
 			Release(VS);
 			Release(PS);
 
+			auto backBuffer = GetBackBuffer(0);
+			renderTarget = CreateRenderTarget(backBuffer);
+
+			dev->OMSetRenderTargets(1, &renderTarget, nullptr);
+			Release(backBuffer);
+		
 			initialised = true;
 		}
 
@@ -1387,6 +1395,7 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
+			Release(renderTarget);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
@@ -1663,9 +1672,7 @@ private:
 		}
 
 		ID3D10RenderTargetView* GetRenderTarget() {
-			ID3D10RenderTargetView* out = nullptr;
-			dev->OMGetRenderTargets(1, &out, nullptr);
-			return out;
+			return renderTarget;
 		}
 
 		ID3D10Texture2D* GetBackBuffer(uint32_t buffer) {
@@ -1810,6 +1817,7 @@ private:
 		FLOAT blendFactor[4];
 		UINT sampleMask;
 		UINT stencilRef;
+		ID3D11RenderTargetView* renderTarget;
 
 		SireDirectX11() : SireRenderer() {
 			swapchain = nullptr;
@@ -1836,6 +1844,7 @@ private:
 			sampleMask = 0;
 			stencilRef = 0;
 			textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+			renderTarget = nullptr;
 		}
 
 		// Start virtual override
@@ -1855,30 +1864,28 @@ private:
 			swapchain = reinterpret_cast<IDXGISwapChain*>(ptr);
 			HRESULT hResult = swapchain->GetDevice(__uuidof(ID3D11Device), (void**)&dev);
 
-			if (FAILED(hResult))
-			{
-				#ifdef SIRE_DX11ON12
-				if (!d3d11on12::InitD3D11on12Resources(swapchain))
-				{
+			if (FAILED(hResult)) {
+#ifdef SIRE_DX11ON12
+				if (!d3d11on12::InitD3D11on12Resources(swapchain)) {
 					currentRenderer = SIRE_RENDERER_NULL;
 					return;
 				}
 				else
 					dev = d3d11on12::d3d11Device.Get();
-				#else
+#else
 				currentRenderer = SIRE_RENDERER_NULL;
 				return;
-				#endif
+#endif
 			}
 
-			#ifdef SIRE_DX11ON12
+#ifdef SIRE_DX11ON12
 			if (d3d11on12::isD3D11on12)
 				devcon = d3d11on12::d3d11Context.Get();
 			else
 				dev->GetImmediateContext(&devcon);
-			#else
+#else
 			dev->GetImmediateContext(&devcon);
-			#endif
+#endif
 
 			DXGI_SWAP_CHAIN_DESC swapChainDesc;
 			ZeroMemory(&swapChainDesc, sizeof(swapChainDesc));
@@ -1949,6 +1956,20 @@ private:
 			Release(VS);
 			Release(PS);
 
+			ID3D11Texture2D* backBuffer = nullptr;
+#ifdef SIRE_DX11ON12
+			if (d3d11on12::isD3D11on12)
+				backBuffer = GetBackBuffer(d3d11on12::bufferIndex);
+			else
+				backBuffer = GetBackBuffer(0);
+#else
+			backBuffer = GetBackBuffer(0);
+#endif
+			renderTarget = CreateRenderTarget(backBuffer);
+
+			devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
+			Release(backBuffer);
+	
 			initialised = true;
 		}
 
@@ -1963,6 +1984,7 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
+			Release(renderTarget);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
@@ -2255,9 +2277,7 @@ private:
 		}
 
 		ID3D11RenderTargetView* GetRenderTarget() {
-            ID3D11RenderTargetView* out = nullptr;
-            devcon->OMGetRenderTargets(1, &out, nullptr);
-            return out;
+            return renderTarget;
 		}
 
 		ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
