@@ -1,21 +1,21 @@
 /*
 	SIRE - Simple Immediate Renderer
 	https://github.com/gennariarmando/sire
-	
+
 	MIT License
-	
+
 	Copyright (c) 2025 _AG
-	
+
 	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
 	in the Software without restriction, including without limitation the rights
 	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 	copies of the Software, and to permit persons to whom the Software is
 	furnished to do so, subject to the following conditions:
-	
+
 	The above copyright notice and this permission notice shall be included in all
 	copies or substantial portions of the Software.
-	
+
 	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -118,8 +118,7 @@ using namespace DirectX;
 #endif
 
 #ifdef SIRE_DX11ON12
-namespace d3d11on12
-{
+namespace d3d11on12 {
 	static inline bool isD3D11on12 = false;
 	static inline UINT bufferIndex = 0;
 	static inline UINT bufferCount = 0;
@@ -134,8 +133,7 @@ namespace d3d11on12
 	static inline Microsoft::WRL::ComPtr<ID3D11On12Device> d3d11On12Device = nullptr;
 	static inline Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d11Context = nullptr;
 
-	static inline HRESULT RetrieveD3DDeviceFromSwapChain(IDXGISwapChain* pSwapChain)
-	{
+	static inline HRESULT RetrieveD3DDeviceFromSwapChain(IDXGISwapChain* pSwapChain) {
 		HRESULT hr = pSwapChain->GetDevice(IID_PPV_ARGS(d3d11Device.GetAddressOf()));
 		if (SUCCEEDED(hr)) {
 			isD3D11on12 = false;
@@ -149,16 +147,14 @@ namespace d3d11on12
 		return hr;
 	}
 
-	static inline BOOL WaitForCommandQueueIfRunningD3D12()
-	{
+	static inline BOOL WaitForCommandQueueIfRunningD3D12() {
 		if (isD3D11on12 && commandQueue.Get() == nullptr) {
 			return TRUE;
 		}
 		return FALSE;
 	}
 
-	static inline HRESULT GetSwapChainDescription(IDXGISwapChain* pSwapChain)
-	{
+	static inline HRESULT GetSwapChainDescription(IDXGISwapChain* pSwapChain) {
 		ZeroMemory(&swapChainDesc, sizeof(DXGI_SWAP_CHAIN_DESC));
 		HRESULT hr = pSwapChain->GetDesc(&swapChainDesc);
 		if (SUCCEEDED(hr)) {
@@ -167,8 +163,7 @@ namespace d3d11on12
 		return hr;
 	}
 
-	static inline HRESULT CreateD3D11On12Device()
-	{
+	static inline HRESULT CreateD3D11On12Device() {
 		D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
 		HRESULT hr = D3D11On12CreateDevice(
 			d3d12Device.Get(),
@@ -186,8 +181,7 @@ namespace d3d11on12
 		return d3d11Device.As(&d3d11On12Device);
 	}
 
-	static inline HRESULT CreateD3D12RtvHeap(_Outptr_ ID3D12DescriptorHeap** ppRtvHeap)
-	{
+	static inline HRESULT CreateD3D12RtvHeap(_Outptr_ ID3D12DescriptorHeap** ppRtvHeap) {
 		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
 		rtvHeapDesc.NumDescriptors = bufferCount;
 		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
@@ -195,16 +189,14 @@ namespace d3d11on12
 		return d3d12Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(ppRtvHeap));
 	}
 
-	static inline HRESULT CreateD3D12RenderTargetView(IDXGISwapChain* pSwapChain, UINT bufferIndex, D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle)
-	{
+	static inline HRESULT CreateD3D12RenderTargetView(IDXGISwapChain* pSwapChain, UINT bufferIndex, D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle) {
 		HRESULT hr = pSwapChain->GetBuffer(bufferIndex, IID_PPV_ARGS(&d3d12RenderTargets[bufferIndex]));
 		if (FAILED(hr)) return hr;
 		d3d12Device->CreateRenderTargetView(d3d12RenderTargets[bufferIndex].Get(), nullptr, rtvHandle);
 		return S_OK;
 	}
 
-	static inline HRESULT CreateD3D11WrappedBackBuffer(UINT bufferIndex)
-	{
+	static inline HRESULT CreateD3D11WrappedBackBuffer(UINT bufferIndex) {
 		D3D11_RESOURCE_FLAGS d3d11Flags = { D3D11_BIND_RENDER_TARGET };
 		return d3d11On12Device->CreateWrappedResource(
 			d3d12RenderTargets[bufferIndex].Get(),
@@ -214,16 +206,14 @@ namespace d3d11on12
 			IID_PPV_ARGS(&d3d11WrappedBackBuffers[bufferIndex]));
 	}
 
-	static inline HRESULT CreateD3D11RenderTargetViewWithWrappedBackBuffer(UINT bufferIndex)
-	{
+	static inline HRESULT CreateD3D11RenderTargetViewWithWrappedBackBuffer(UINT bufferIndex) {
 		return d3d11Device->CreateRenderTargetView(
 			d3d11WrappedBackBuffers[bufferIndex].Get(),
 			nullptr,
 			d3d11RenderTargetViews[bufferIndex].GetAddressOf());
 	}
 
-	static inline HRESULT CreateD3D12Buffers(IDXGISwapChain* pSwapChain)
-	{
+	static inline HRESULT CreateD3D12Buffers(IDXGISwapChain* pSwapChain) {
 		d3d12RenderTargets.resize(bufferCount);
 		d3d11WrappedBackBuffers.resize(bufferCount);
 		d3d11RenderTargetViews.resize(bufferCount);
@@ -250,8 +240,7 @@ namespace d3d11on12
 		return S_OK;
 	}
 
-	static inline HRESULT InitD3D12(IDXGISwapChain* pSwapChain)
-	{
+	static inline HRESULT InitD3D12(IDXGISwapChain* pSwapChain) {
 		HRESULT hr = CreateD3D11On12Device();
 		if (FAILED(hr)) return hr;
 
@@ -260,8 +249,7 @@ namespace d3d11on12
 		return CreateD3D12Buffers(pSwapChain);
 	}
 
-	static inline BOOL InitD3D11on12Resources(IDXGISwapChain* swapChain)
-	{
+	static inline BOOL InitD3D11on12Resources(IDXGISwapChain* swapChain) {
 		HRESULT hr = RetrieveD3DDeviceFromSwapChain(swapChain);
 		if (FAILED(hr)) return FALSE;
 
@@ -276,24 +264,19 @@ namespace d3d11on12
 		return TRUE;
 	}
 
-	static inline void ReleaseViewsBuffersAndContext()
-	{
-		for (int i = 0; i < bufferCount; i++)
-		{
-			if (d3d12Device.Get() == nullptr)
-			{
+	static inline void ReleaseViewsBuffersAndContext() {
+		for (int i = 0; i < bufferCount; i++) {
+			if (d3d12Device.Get() == nullptr) {
 				d3d11RenderTargetViews[i].ReleaseAndGetAddressOf();
 			}
-			else
-			{
+			else {
 				d3d11RenderTargetViews[i].ReleaseAndGetAddressOf();
 				d3d12RenderTargets[i].ReleaseAndGetAddressOf();
 				d3d11WrappedBackBuffers[i].ReleaseAndGetAddressOf();
 			}
 		}
 
-		if (d3d11Context.Get() != nullptr)
-		{
+		if (d3d11Context.Get() != nullptr) {
 			d3d11Context->Flush();
 			d3d11Context.Reset();
 		}
@@ -311,79 +294,11 @@ namespace d3d11on12
 		isD3D11on12 = false;
 	}
 
-	static inline void SetCommandQueue(ID3D12CommandQueue* cq)
-	{
+	static inline void SetCommandQueue(ID3D12CommandQueue* cq) {
 		commandQueue = cq;
 	}
 }
 #endif
-
-template <typename T>
-class SirePtr {
-public:
-	SirePtr() {
-		ptr = std::make_unique<T>();
-	}
-
-	SirePtr(T* p) : ptr(p) {}
-
-	~SirePtr() {
-		Reset();
-	}
-
-	SirePtr(const SirePtr<T>& other) = delete;
-
-	SirePtr<T>& operator=(const SirePtr<T>& other) = delete;
-
-	SirePtr(SirePtr<T>&& other) noexcept : ptr(nullptr) {
-		*this = std::move(other);
-	}
-
-	SirePtr<T>& operator=(SirePtr<T>&& other) noexcept {
-		if (this != &other) {
-			Reset();
-			ptr = std::move(other.ptr);
-			other.ptr = nullptr;
-		}
-		return *this;
-	}
-
-	T* Get() const {
-		return ptr.get();
-	}
-
-	T** GetAddressOf() {
-		return ptr.get();
-	}
-
-	T* operator->() const {
-		return ptr.get();
-	}
-
-	operator bool() const {
-		return (ptr != nullptr);
-	}
-
-	void Reset() {
-		Release();
-		ptr.reset();
-	}
-
-	void Reset(T* p) {
-		Release();
-		ptr.reset(p);
-	}
-
-	void Release() {
-		if (ptr) {
-			ptr->Release();
-			ptr = nullptr;
-		}
-	}
-
-private:
-	std::unique_ptr<T> ptr;
-};
 
 class Sire {
 public:
@@ -472,13 +387,116 @@ public:
 		SIRE_TRIANGLE,
 	};
 
-	struct tSireTexture2D {
+	struct tSireUnknown {
+		virtual void Release() {}
+	};
+
+	template <typename T>
+	class SirePtr : tSireUnknown {
+	public:
+		SirePtr() {
+			ptr = std::make_unique<T>();
+		}
+
+		SirePtr(T* p) : ptr(p) {}
+
+		~SirePtr() {
+			Reset();
+		}
+
+		SirePtr(const SirePtr<T>& other) = delete;
+
+		SirePtr<T>& operator=(const SirePtr<T>& other) = delete;
+
+		SirePtr(SirePtr<T>&& other) noexcept : ptr(nullptr) {
+			*this = std::move(other);
+		}
+
+		SirePtr<T>& operator=(SirePtr<T>&& other) noexcept {
+			if (this != &other) {
+				Reset();
+				ptr = std::move(other.ptr);
+				other.ptr = nullptr;
+			}
+			return *this;
+		}
+
+		T* Get() const {
+			return ptr.get();
+		}
+
+		T* operator->() const {
+			return ptr.get();
+		}
+
+		operator bool() const {
+			return (ptr != nullptr);
+		}
+
+		void Reset() {
+			Release();
+			ptr.reset();
+		}
+
+		void Reset(T* p) {
+			Release();
+			ptr.reset(p);
+		}
+
+		void Release() {
+			if (ptr) {
+				ptr->Release();
+				ptr = nullptr;
+			}
+		}
+
+	private:
+		std::unique_ptr<T> ptr;
+	};
+
+	struct tSireRenderTarget : tSireUnknown {
+		uintptr_t* renderTargetView;
+
+		void Set(uintptr_t* rtv) {
+			renderTargetView = rtv;
+		}
+
+		void Release() override {
+			if (!renderTargetView)
+				return;
+
+			switch (GetCurrentRenderer()) {
+				case SIRE_RENDERER_DX9:
+				{
+					IDirect3DSurface9* surf = reinterpret_cast<IDirect3DSurface9*>(renderTargetView);
+					surf->Release();
+					break;
+				}
+				case SIRE_RENDERER_DX10:
+				{
+					ID3D10RenderTargetView* rtv = reinterpret_cast<ID3D10RenderTargetView*>(renderTargetView);
+					rtv->Release();
+					break;
+				}
+				case SIRE_RENDERER_DX11:
+				{
+					ID3D11RenderTargetView* rtv = reinterpret_cast<ID3D11RenderTargetView*>(renderTargetView);
+					rtv->Release();
+					break;
+				}
+			}
+
+			renderTargetView = nullptr;
+		}
+	};
+
+	struct tSireTexture2D : tSireUnknown {
 		int32_t w;
 		int32_t h;
 		int32_t format;
 		int32_t swapColors;
 
-		struct tSirePtrsHolder {
+		struct tSirePtrsHolder : tSireUnknown {
 			uintptr_t* texture;
 			uintptr_t* surface;
 			eSireRenderer owner;
@@ -493,32 +511,35 @@ public:
 				Release();
 			}
 
-			void Release() {
+			void Release() override {
 				if (GetCurrentRenderer() == owner) {
 					switch (GetCurrentRenderer()) {
 #ifdef SIRE_DX9
-					case SIRE_RENDERER_DX9: {
-						IDirect3DTexture9* tex = reinterpret_cast<IDirect3DTexture9*>(texture);
-						IDirect3DSurface9* surf = reinterpret_cast<IDirect3DSurface9*>(surface);
-						Sire::Release(tex);
-						Sire::Release(surf);
-					} break;
+						case SIRE_RENDERER_DX9:
+						{
+							IDirect3DTexture9* tex = reinterpret_cast<IDirect3DTexture9*>(texture);
+							IDirect3DSurface9* surf = reinterpret_cast<IDirect3DSurface9*>(surface);
+							Sire::Release(tex);
+							Sire::Release(surf);
+						} break;
 #endif
 #ifdef SIRE_DX10
-					case SIRE_RENDERER_DX10: {
-						ID3D10ShaderResourceView* tex = reinterpret_cast<ID3D10ShaderResourceView*>(texture);
-						ID3D10Texture2D* surf = reinterpret_cast<ID3D10Texture2D*>(surface);
-						Sire::Release(tex);
-						Sire::Release(surf);
-					} break;
+						case SIRE_RENDERER_DX10:
+						{
+							ID3D10ShaderResourceView* tex = reinterpret_cast<ID3D10ShaderResourceView*>(texture);
+							ID3D10Texture2D* surf = reinterpret_cast<ID3D10Texture2D*>(surface);
+							Sire::Release(tex);
+							Sire::Release(surf);
+						} break;
 #endif
 #ifdef SIRE_DX11
-					case SIRE_RENDERER_DX11: {
-						ID3D11ShaderResourceView* tex = reinterpret_cast<ID3D11ShaderResourceView*>(texture);
-						ID3D11Texture2D* surf = reinterpret_cast<ID3D11Texture2D*>(surface);
-						Sire::Release(tex);
-						Sire::Release(surf);
-					} break;
+						case SIRE_RENDERER_DX11:
+						{
+							ID3D11ShaderResourceView* tex = reinterpret_cast<ID3D11ShaderResourceView*>(texture);
+							ID3D11Texture2D* surf = reinterpret_cast<ID3D11Texture2D*>(surface);
+							Sire::Release(tex);
+							Sire::Release(surf);
+						} break;
 #endif
 					}
 				}
@@ -546,10 +567,6 @@ public:
 			this->format = format;
 			this->ptrs.texture = tex;
 			this->ptrs.surface = surf;
-		}
-
-		void Release() {
-
 		}
 	};
 
@@ -877,10 +894,10 @@ private:
 			hWnd = presentParams.hDeviceWindow;
 
 			dev->CreateVertexBuffer(sizeof(tVertexLegacy) * 65536, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
-				0, D3DPOOL_DEFAULT, &vb, nullptr);
+									0, D3DPOOL_DEFAULT, &vb, nullptr);
 
 			dev->CreateIndexBuffer(sizeof(uint16_t) * 65536, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
-				D3DFMT_INDEX16, D3DPOOL_DEFAULT, &ib, nullptr);
+								   D3DFMT_INDEX16, D3DPOOL_DEFAULT, &ib, nullptr);
 
 			// Init shaders
 			ID3DXBuffer* VS = CompileShader(hlslShader2_0, "VShader", "vs_2_0");
@@ -963,8 +980,8 @@ private:
 			pct->SetInt(dev, pct->GetConstantByName(NULL, "swapColors"), tempcb.swapColors);
 			pct->SetInt(dev, vct->GetConstantByName(NULL, "swapColors"), tempcb.swapColors);
 
-			auto renderTarget = GetRenderTarget();
-			dev->SetRenderTarget(0, renderTarget);
+			if (currentRenderTargetView)
+				dev->SetRenderTarget(0, (IDirect3DSurface9*)currentRenderTargetView);
 
 			dev->SetVertexDeclaration(vertexDeclaration);
 
@@ -992,15 +1009,15 @@ private:
 
 			D3DPRIMITIVETYPE type = D3DPT_POINTLIST;
 			switch (primitiveType) {
-			case SIRE_LINE:
-				type = D3DPT_LINELIST;
-				break;
-			case SIRE_POINT:
-				type = D3DPT_POINTLIST;
-				break;
-			case SIRE_TRIANGLE:
-				type = D3DPT_TRIANGLELIST;
-				break;
+				case SIRE_LINE:
+					type = D3DPT_LINELIST;
+					break;
+				case SIRE_POINT:
+					type = D3DPT_POINTLIST;
+					break;
+				case SIRE_TRIANGLE:
+					type = D3DPT_TRIANGLELIST;
+					break;
 			}
 
 			dev->DrawIndexedPrimitive(type, 0, 0, static_cast<uint32_t>(verticesLegacy.size()), 0, numIndices / 3);
@@ -1008,7 +1025,7 @@ private:
 			stateBlock->Apply();
 			Release(stateBlock);
 		}
-		
+
 		void SetVertices(tVertex const& v) override {
 			tVertexLegacy vl = {};
 
@@ -1100,9 +1117,17 @@ private:
 
 		// End virtual override
 
-		IDirect3DSurface9* GetRenderTarget() {
-			IDirect3DSurface9* out = nullptr;
-			dev->GetRenderTarget(0, &out);
+		IDirect3DSurface9** GetRenderTargets() {
+			D3DCAPS9 caps;
+			dev->GetDeviceCaps(&caps);
+			UINT maxRTs = caps.NumSimultaneousRTs;
+
+			static IDirect3DSurface9* out[8] = {};
+			memset(out, 0, sizeof(out));
+
+			for (int32_t i = 0; i < maxRTs; i++) {
+				dev->GetRenderTarget(i, &out[i]);
+			}
 			return out;
 		}
 
@@ -1153,42 +1178,42 @@ private:
 
 		const char* GetErrorString(HRESULT hr) {
 			switch (hr) {
-			case D3D_OK:
-				return "D3D_OK: No error.";
-			case D3DERR_NOTAVAILABLE:
-				return "D3DERR_NOTAVAILABLE: This device does not support the queried technique or method.";
-			case D3DERR_OUTOFVIDEOMEMORY:
-				return "D3DERR_OUTOFVIDEOMEMORY: Out of video memory.";
-			case D3DERR_INVALIDCALL:
-				return "D3DERR_INVALIDCALL: The method call is invalid.";
-			case D3DERR_DRIVERINTERNALERROR:
-				return "D3DERR_DRIVERINTERNALERROR: Internal driver error.";
-			case D3DERR_DEVICELOST:
-				return "D3DERR_DEVICELOST: The device is lost and needs to be reset.";
-			case D3DERR_INVALIDDEVICE:
-				return "D3DERR_INVALIDDEVICE: The requested device type is not valid.";
-			case D3DERR_MOREDATA:
-				return "D3DERR_MOREDATA: There is more data available.";
-			case D3DERR_NOTFOUND:
-				return "D3DERR_NOTFOUND: The requested item was not found.";
-			case D3DERR_DEVICEHUNG:
-				return "D3DERR_DEVICEHUNG: The device is hung and needs to be reset.";
-			case D3DERR_DEVICEREMOVED:
-				return "D3DERR_DEVICEREMOVED: The device has been removed.";
-			case D3DERR_DEVICENOTRESET:
-				return "D3DERR_DEVICENOTRESET: The device has not been reset.";
-			case D3DERR_WASSTILLDRAWING:
-				return "D3DERR_WASSTILLDRAWING: The previous rendering operation is still in progress.";
-			case D3DERR_UNSUPPORTEDALPHAARG:
-				return "D3DERR_UNSUPPORTEDALPHAARG: The alpha blending argument is not supported.";
-			case D3DERR_UNSUPPORTEDALPHAOPERATION:
-				return "D3DERR_UNSUPPORTEDALPHAOPERATION: The alpha blending operation is not supported.";
-			case D3DERR_UNSUPPORTEDCOLORARG:
-				return "D3DERR_UNSUPPORTEDCOLORARG: The color blending argument is not supported.";
-			case D3DERR_UNSUPPORTEDCOLOROPERATION:
-				return "D3DERR_UNSUPPORTEDCOLOROPERATION: The color blending operation is not supported.";
-			default:
-				return "Unknown error.";
+				case D3D_OK:
+					return "D3D_OK: No error.";
+				case D3DERR_NOTAVAILABLE:
+					return "D3DERR_NOTAVAILABLE: This device does not support the queried technique or method.";
+				case D3DERR_OUTOFVIDEOMEMORY:
+					return "D3DERR_OUTOFVIDEOMEMORY: Out of video memory.";
+				case D3DERR_INVALIDCALL:
+					return "D3DERR_INVALIDCALL: The method call is invalid.";
+				case D3DERR_DRIVERINTERNALERROR:
+					return "D3DERR_DRIVERINTERNALERROR: Internal driver error.";
+				case D3DERR_DEVICELOST:
+					return "D3DERR_DEVICELOST: The device is lost and needs to be reset.";
+				case D3DERR_INVALIDDEVICE:
+					return "D3DERR_INVALIDDEVICE: The requested device type is not valid.";
+				case D3DERR_MOREDATA:
+					return "D3DERR_MOREDATA: There is more data available.";
+				case D3DERR_NOTFOUND:
+					return "D3DERR_NOTFOUND: The requested item was not found.";
+				case D3DERR_DEVICEHUNG:
+					return "D3DERR_DEVICEHUNG: The device is hung and needs to be reset.";
+				case D3DERR_DEVICEREMOVED:
+					return "D3DERR_DEVICEREMOVED: The device has been removed.";
+				case D3DERR_DEVICENOTRESET:
+					return "D3DERR_DEVICENOTRESET: The device has not been reset.";
+				case D3DERR_WASSTILLDRAWING:
+					return "D3DERR_WASSTILLDRAWING: The previous rendering operation is still in progress.";
+				case D3DERR_UNSUPPORTEDALPHAARG:
+					return "D3DERR_UNSUPPORTEDALPHAARG: The alpha blending argument is not supported.";
+				case D3DERR_UNSUPPORTEDALPHAOPERATION:
+					return "D3DERR_UNSUPPORTEDALPHAOPERATION: The alpha blending operation is not supported.";
+				case D3DERR_UNSUPPORTEDCOLORARG:
+					return "D3DERR_UNSUPPORTEDCOLORARG: The color blending argument is not supported.";
+				case D3DERR_UNSUPPORTEDCOLOROPERATION:
+					return "D3DERR_UNSUPPORTEDCOLOROPERATION: The color blending operation is not supported.";
+				default:
+					return "Unknown error.";
 			}
 		}
 
@@ -1256,7 +1281,6 @@ private:
 		FLOAT blendFactor[4];
 		UINT sampleMask;
 		UINT stencilRef;
-		ID3D10RenderTargetView* renderTarget;
 
 		// Start virtual override
 		SireDirectX10() : SireRenderer() {
@@ -1282,7 +1306,6 @@ private:
 			blendFactor[3] = 0.0f;
 			sampleMask = 0;
 			stencilRef = 0;
-			renderTarget = nullptr;
 			textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 		}
 
@@ -1375,12 +1398,6 @@ private:
 			Release(VS);
 			Release(PS);
 
-			auto backBuffer = GetBackBuffer(0);
-			renderTarget = CreateRenderTarget(backBuffer);
-
-			dev->OMSetRenderTargets(1, &renderTarget, nullptr);
-			Release(backBuffer);
-		
 			initialised = true;
 		}
 
@@ -1395,7 +1412,6 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
-			Release(renderTarget);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
@@ -1442,11 +1458,11 @@ private:
 			dev->IAGetInputLayout(&prevInputLayout);
 			dev->IASetInputLayout(inputLayout);
 
-			auto prevRenderTarget = GetRenderTargets()[0];
-			auto prevStencilView = GetDepthStencilViews()[0];
+			auto prevRenderTargets = GetRenderTargets();
+			auto prevStencilView = GetDepthStencilView();
 
-			auto renderTarget = GetRenderTarget();
-			dev->OMSetRenderTargets(1, &renderTarget, nullptr);
+			if (currentRenderTargetView)
+				dev->OMSetRenderTargets(1, (ID3D10RenderTargetView**)&currentRenderTargetView, nullptr);
 
 			ID3D10VertexShader* prevVertexShader = nullptr;
 			dev->VSGetShader(&prevVertexShader);
@@ -1507,15 +1523,15 @@ private:
 
 			D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
 			switch (primitiveType) {
-			case SIRE_LINE:
-				type = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
-				break;
-			case SIRE_POINT:
-				type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
-				break;
-			case SIRE_TRIANGLE:
-				type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-				break;
+				case SIRE_LINE:
+					type = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
+					break;
+				case SIRE_POINT:
+					type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
+					break;
+				case SIRE_TRIANGLE:
+					type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+					break;
 			}
 
 			D3D_PRIMITIVE_TOPOLOGY prevType;
@@ -1526,8 +1542,9 @@ private:
 			dev->DrawIndexed(numIndices, 0, 0);
 
 			// Restore shit
-			dev->OMSetRenderTargets(1, &prevRenderTarget, prevStencilView);
-			Release(prevRenderTarget);
+			dev->OMSetRenderTargets(1, &prevRenderTargets[0], prevStencilView);
+
+			Release(prevRenderTargets, D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT);
 			Release(prevStencilView);
 
 			dev->IASetInputLayout(prevInputLayout);
@@ -1679,16 +1696,11 @@ private:
 			return out;
 		}
 
-		ID3D10DepthStencilView** GetDepthStencilViews() {
-			static ID3D10RenderTargetView* dummy[D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
-			static ID3D10DepthStencilView* out[D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
-			memset(out, 0, sizeof(out));
-			dev->OMGetRenderTargets(D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT, dummy, out);
+		ID3D10DepthStencilView* GetDepthStencilView() {
+			static ID3D10DepthStencilView* out = {};
+			out = nullptr;
+			dev->OMGetRenderTargets(1, nullptr, &out);
 			return out;
-		}
-
-		ID3D10RenderTargetView* GetRenderTarget() {
-			return renderTarget;
 		}
 
 		ID3D10Texture2D* GetBackBuffer(uint32_t buffer) {
@@ -1833,7 +1845,6 @@ private:
 		FLOAT blendFactor[4];
 		UINT sampleMask;
 		UINT stencilRef;
-		ID3D11RenderTargetView* renderTarget;
 
 		SireDirectX11() : SireRenderer() {
 			swapchain = nullptr;
@@ -1860,7 +1871,6 @@ private:
 			sampleMask = 0;
 			stencilRef = 0;
 			textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-			renderTarget = nullptr;
 		}
 
 		// Start virtual override
@@ -1972,20 +1982,6 @@ private:
 			Release(VS);
 			Release(PS);
 
-			ID3D11Texture2D* backBuffer = nullptr;
-#ifdef SIRE_DX11ON12
-			if (d3d11on12::isD3D11on12)
-				backBuffer = GetBackBuffer(d3d11on12::bufferIndex);
-			else
-				backBuffer = GetBackBuffer(0);
-#else
-			backBuffer = GetBackBuffer(0);
-#endif
-			renderTarget = CreateRenderTarget(backBuffer);
-
-			devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
-			Release(backBuffer);
-	
 			initialised = true;
 		}
 
@@ -2000,7 +1996,6 @@ private:
 			Release(inputLayout);
 			Release(internalVertexShader);
 			Release(internalPixelShader);
-			Release(renderTarget);
 
 			vertexShader = nullptr;
 			pixelShader = nullptr;
@@ -2050,19 +2045,19 @@ private:
 			devcon->IAGetInputLayout(&prevInputLayout);
 			devcon->IASetInputLayout(inputLayout);
 
-			auto prevRenderTarget = GetRenderTargets()[0];
-			auto prevStencilView = GetDepthStencilViews()[0];
+			auto prevRenderTargets = GetRenderTargets();
+			auto prevStencilView = GetDepthStencilView();
 
-			#ifdef SIRE_DX11ON12
-			if (!d3d11on12::isD3D11on12)
-			{
+			if (currentRenderTargetView) {
+#ifdef SIRE_DX11ON12
+				if (!d3d11on12::isD3D11on12) {
+					devcon->OMSetRenderTargets(1, (ID3D11RenderTargetView**)&currentRenderTargetView, nullptr);
+				}
+#else
 				auto renderTarget = GetRenderTarget();
-				devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
+				devcon->OMSetRenderTargets(1, (ID3D11RenderTargetView**)&Sire::currentRenderTargetView, nullptr);
+#endif
 			}
-			#else
-			auto renderTarget = GetRenderTarget();
-			devcon->OMSetRenderTargets(1, &renderTarget, nullptr);
-			#endif
 
 			ID3D11VertexShader* prevVertexShader = nullptr;
 			devcon->VSGetShader(&prevVertexShader, nullptr, 0);
@@ -2123,15 +2118,15 @@ private:
 
 			D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
 			switch (primitiveType) {
-			case SIRE_LINE:
-				type = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
-				break;
-			case SIRE_POINT:
-				type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
-				break;
-			case SIRE_TRIANGLE:
-				type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-				break;
+				case SIRE_LINE:
+					type = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
+					break;
+				case SIRE_POINT:
+					type = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
+					break;
+				case SIRE_TRIANGLE:
+					type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+					break;
 			}
 
 			D3D_PRIMITIVE_TOPOLOGY prevType;
@@ -2142,8 +2137,9 @@ private:
 			devcon->DrawIndexed(numIndices, 0, 0);
 
 			// Restore shit
-			devcon->OMSetRenderTargets(1, &prevRenderTarget, prevStencilView);
-			Release(prevRenderTarget);
+			devcon->OMSetRenderTargets(1, &prevRenderTargets[0], prevStencilView);
+
+			Release(prevRenderTargets, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT);
 			Release(prevStencilView);
 
 			devcon->IASetInputLayout(prevInputLayout);
@@ -2196,13 +2192,12 @@ private:
 			devcon->OMSetBlendState(blendState, blendFactor, sampleMask);
 			Release(blendState);
 
-			#ifdef SIRE_DX11ON12
-			if (d3d11on12::isD3D11on12)
-			{
+#ifdef SIRE_DX11ON12
+			if (d3d11on12::isD3D11on12) {
 				d3d11on12::d3d11On12Device->ReleaseWrappedResources(d3d11on12::d3d11WrappedBackBuffers[d3d11on12::bufferIndex].GetAddressOf(), 1);
 				d3d11on12::d3d11Context->Flush();
 			}
-			#endif
+#endif
 		}
 
 		void SetRenderStates(tRenderState const& s) override {
@@ -2300,28 +2295,25 @@ private:
 			return out;
 		}
 
-		ID3D11DepthStencilView** GetDepthStencilViews() {
-			static ID3D11RenderTargetView* dummy[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
-			static ID3D11DepthStencilView* out[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
-			memset(out, 0, sizeof(out));
-			devcon->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, dummy, out);
+		ID3D11DepthStencilView* GetDepthStencilView() {
+			static ID3D11DepthStencilView* out = {};
+			ID3D11RenderTargetView* rtv = {};
+			out = nullptr;
+			devcon->OMGetRenderTargets(1, &rtv, &out);
+			Release(rtv);
 			return out;
-		}
-
-		ID3D11RenderTargetView* GetRenderTarget() {
-            return renderTarget;
 		}
 
 		ID3D11Texture2D* GetBackBuffer(uint32_t buffer) {
 			ID3D11Texture2D* out = nullptr;
-			#ifdef SIRE_DX11ON12
+#ifdef SIRE_DX11ON12
 			if (d3d11on12::isD3D11on12)
 				d3d11on12::d3d11WrappedBackBuffers[d3d11on12::bufferIndex]->QueryInterface(__uuidof(ID3D11Texture2D), (void**)&out);
 			else
 				swapchain->GetBuffer(buffer, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&out));
-			#else
+#else
 			swapchain->GetBuffer(buffer, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&out));
-			#endif
+#endif
 			return out;
 		}
 
@@ -2498,7 +2490,7 @@ private:
 				return;
 
 			dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, nullptr, __uuidof(ID3D12GraphicsCommandList), (void**)&commandList);
-			
+
 			commandList->Close();
 
 			DXGI_SWAP_CHAIN_DESC swapChainDesc;
@@ -2529,17 +2521,17 @@ private:
 
 			// Vertex buffer
 			dev->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-				D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&vertexBuffer);
+										 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&vertexBuffer);
 
 			// Index buffer
 			bufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 			dev->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-				D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&indexBuffer);
+										 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&indexBuffer);
 
 			// Constant buffer
 			bufferDesc.Width = sizeof(tConstBuff);
 			dev->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-				D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&constantBuffer);
+										 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, __uuidof(ID3D12Resource), (void**)&constantBuffer);
 
 			D3D12_SAMPLER_DESC samplerDesc;
 			ZeroMemory(&samplerDesc, sizeof(samplerDesc));
@@ -2615,7 +2607,7 @@ private:
 		}
 
 		void Begin() override {
-			
+
 		}
 
 		void End() override {
@@ -2629,7 +2621,7 @@ private:
 		}
 
 		void SetRenderStates(tRenderState const& s) override {
-			
+
 		}
 
 		void CopyResource(uintptr_t* dst, uintptr_t* src) override {
@@ -2870,7 +2862,7 @@ private:
 				glEnable(GL_BLEND);
 			else
 				glDisable(GL_BLEND);
-			
+
 			glBlendFunc(GL_SRC_ALPHA, SireToOpenGLBlendState(s.srcBlend));
 			glBlendFunc(GL_DST_ALPHA, SireToOpenGLBlendState(s.dstBlend));
 
@@ -2901,10 +2893,10 @@ private:
 
 		uint32_t SireFillMode(int8_t mode) {
 			switch (mode) {
-			case SIRE_FILL_WIREFRAME:
-				return GL_LINE;
-			case SIRE_FILL_SOLID:
-				return GL_FILL;
+				case SIRE_FILL_WIREFRAME:
+					return GL_LINE;
+				case SIRE_FILL_SOLID:
+					return GL_FILL;
 			}
 
 			return 0;
@@ -2926,28 +2918,28 @@ private:
 
 		uint32_t SireToOpenGLBlendState(int8_t blend) {
 			switch (blend) {
-			case SIRE_BLEND_ZERO:
-				return GL_ZERO;
-			case SIRE_BLEND_ONE:
-				return GL_ONE;
-			case SIRE_BLEND_SRC_COLOR:
-				return GL_SRC_COLOR;
-			case SIRE_BLEND_INV_SRC_COLOR:
-				return GL_ONE_MINUS_SRC_COLOR;
-			case SIRE_BLEND_SRC_ALPHA:
-				return GL_SRC_ALPHA;
-			case SIRE_BLEND_INV_SRC_ALPHA:
-				return GL_ONE_MINUS_SRC_ALPHA;
-			case SIRE_BLEND_DEST_ALPHA:
-				return GL_DST_ALPHA;
-			case SIRE_BLEND_INV_DEST_ALPHA:
-				return GL_ONE_MINUS_DST_ALPHA;
-			case SIRE_BLEND_DEST_COLOR:
-				return GL_DST_COLOR;
-			case SIRE_BLEND_INV_DEST_COLOR:
-				return GL_ONE_MINUS_DST_COLOR;
-			case SIRE_BLEND_SRC_ALPHA_SAT:
-				return GL_SRC_ALPHA_SATURATE;
+				case SIRE_BLEND_ZERO:
+					return GL_ZERO;
+				case SIRE_BLEND_ONE:
+					return GL_ONE;
+				case SIRE_BLEND_SRC_COLOR:
+					return GL_SRC_COLOR;
+				case SIRE_BLEND_INV_SRC_COLOR:
+					return GL_ONE_MINUS_SRC_COLOR;
+				case SIRE_BLEND_SRC_ALPHA:
+					return GL_SRC_ALPHA;
+				case SIRE_BLEND_INV_SRC_ALPHA:
+					return GL_ONE_MINUS_SRC_ALPHA;
+				case SIRE_BLEND_DEST_ALPHA:
+					return GL_DST_ALPHA;
+				case SIRE_BLEND_INV_DEST_ALPHA:
+					return GL_ONE_MINUS_DST_ALPHA;
+				case SIRE_BLEND_DEST_COLOR:
+					return GL_DST_COLOR;
+				case SIRE_BLEND_INV_DEST_COLOR:
+					return GL_ONE_MINUS_DST_COLOR;
+				case SIRE_BLEND_SRC_ALPHA_SAT:
+					return GL_SRC_ALPHA_SATURATE;
 			}
 
 			return 0;
@@ -2956,34 +2948,34 @@ private:
 		tTexture2D* GetBackBuffer(uint32_t buffer) {
 			int32_t w = 0;
 			int32_t h = 0;
-			
+
 			HDC hdc = wglGetCurrentDC();
 			HDC hMemoryDC = CreateCompatibleDC(hdc);
-			
+
 			RECT windowRect = {};
 			GetClientRect(WindowFromDC(hdc), &windowRect);
-			
+
 			w = windowRect.right - windowRect.left;
 			h = windowRect.bottom - windowRect.top;
-			
+
 			HBITMAP hBitmap = CreateCompatibleBitmap(hdc, w, h);
 			HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hBitmap);
-			
+
 			BitBlt(hMemoryDC, 0, 0, w, h, hdc, 0, 0, SRCCOPY);
-			
+
 			BITMAPINFO bitmapInfo = { 0 };
 			bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 			bitmapInfo.bmiHeader.biWidth = w;
 			bitmapInfo.bmiHeader.biHeight = -h;
 			bitmapInfo.bmiHeader.biPlanes = 1;
 			bitmapInfo.bmiHeader.biBitCount = 32;
-			
+
 			uint8_t* pixels = new unsigned char[w * h * 4];
-			
+
 			GetDIBits(hMemoryDC, hBitmap, 0, h, pixels, &bitmapInfo, DIB_RGB_COLORS);
-			
+
 			tTexture2D* out = CreateTexture(w, h, pixels);
-			
+
 			delete[] pixels;
 
 			return out;
@@ -2993,10 +2985,10 @@ private:
 			tTexture2D* out = new tTexture2D();
 			glGenTextures(1, &out->id);
 			glBindTexture(GL_TEXTURE_2D, out->id);
-			
+
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-			
+
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 			glGenerateMipmap(GL_TEXTURE_2D);
 
@@ -3023,7 +3015,7 @@ private:
 
 		// Start virtual override
 
-		bool IsRendererActive() override { 
+		bool IsRendererActive() override {
 			return false;
 		}
 
@@ -3058,7 +3050,7 @@ private:
 		}
 
 		void SetTexture(uintptr_t* tex, uintptr_t* mask) override {
-		
+
 		}
 
 		// End virtual override	
@@ -3085,6 +3077,8 @@ private:
 	static inline bool renderersInitialised = false;
 
 	static inline tConstBuff cb = { {}, false, false };
+
+	static inline uintptr_t* currentRenderTargetView = nullptr;
 
 	static inline std::string glslShader3_3_0 = R"(
 	#version 330 core
@@ -3431,42 +3425,42 @@ public:
 			return;
 
 		switch (state) {
-		case SIRE_BLEND_ALPHATESTENABLE:
-			shared.renderStates.blendEnable = value;
-			break;
-		case SIRE_BLEND_SRCBLEND:
-			shared.renderStates.srcBlend = value;
-			break;
-		case SIRE_BLEND_DESTBLEND:
-			shared.renderStates.destBlendAlpha = value;
-			break;
-		case SIRE_BLEND_BLENDOP:
-			shared.renderStates.blendop = value;
-			break;
-		case SIRE_BLEND_SRCBLENDALPHA:
-			shared.renderStates.srcBlendAlpha = value;
-			break;
-		case SIRE_BLEND_DESTBLENDALPHA:
-			shared.renderStates.destBlendAlpha = value;
-			break;
-		case SIRE_BLEND_BLENDOPALPHA:
-			shared.renderStates.blendOpAlpha = value;
-			break;
-		case SIRE_BLEND_WRITEMASK:
-			shared.renderStates.renderTargetWriteMask = value;
-			break;
-		case SIRE_BLEND_CULLMODE:
-			shared.renderStates.cullMode = value;
-			break;
-		case SIRE_BLEND_FILLMODE:
-			shared.renderStates.fillMode = value;
-			break;
-		case SIRE_BLEND_STENCILENABLE:
-			shared.renderStates.stencilEnable = value;
-			break;
-		case SIRE_BLEND_COLORWRITEENABLE:
-			shared.renderStates.sampleMask = value;
-			break;
+			case SIRE_BLEND_ALPHATESTENABLE:
+				shared.renderStates.blendEnable = value;
+				break;
+			case SIRE_BLEND_SRCBLEND:
+				shared.renderStates.srcBlend = value;
+				break;
+			case SIRE_BLEND_DESTBLEND:
+				shared.renderStates.destBlendAlpha = value;
+				break;
+			case SIRE_BLEND_BLENDOP:
+				shared.renderStates.blendop = value;
+				break;
+			case SIRE_BLEND_SRCBLENDALPHA:
+				shared.renderStates.srcBlendAlpha = value;
+				break;
+			case SIRE_BLEND_DESTBLENDALPHA:
+				shared.renderStates.destBlendAlpha = value;
+				break;
+			case SIRE_BLEND_BLENDOPALPHA:
+				shared.renderStates.blendOpAlpha = value;
+				break;
+			case SIRE_BLEND_WRITEMASK:
+				shared.renderStates.renderTargetWriteMask = value;
+				break;
+			case SIRE_BLEND_CULLMODE:
+				shared.renderStates.cullMode = value;
+				break;
+			case SIRE_BLEND_FILLMODE:
+				shared.renderStates.fillMode = value;
+				break;
+			case SIRE_BLEND_STENCILENABLE:
+				shared.renderStates.stencilEnable = value;
+				break;
+			case SIRE_BLEND_COLORWRITEENABLE:
+				shared.renderStates.sampleMask = value;
+				break;
 		}
 	}
 
@@ -3512,37 +3506,37 @@ public:
 				SireRenderer* renderer = nullptr;
 
 				switch (re) {
-				case SIRE_RENDERER_NULL:
-					break;
+					case SIRE_RENDERER_NULL:
+						break;
 #ifdef SIRE_DX9
-				case SIRE_RENDERER_DX9:
-					renderer = new SireDirectX9();
-					break;
+					case SIRE_RENDERER_DX9:
+						renderer = new SireDirectX9();
+						break;
 #endif
 #ifdef SIRE_DX10
-				case SIRE_RENDERER_DX10:
-					renderer = new SireDirectX10();
-					break;
+					case SIRE_RENDERER_DX10:
+						renderer = new SireDirectX10();
+						break;
 #endif
 #ifdef SIRE_DX11
-				case SIRE_RENDERER_DX11:
-					renderer = new SireDirectX11();
-					break;
+					case SIRE_RENDERER_DX11:
+						renderer = new SireDirectX11();
+						break;
 #endif
 #ifdef SIRE_DX12
-				case SIRE_RENDERER_DX12:
-					renderer = new SireDirectX12();
-					break;
+					case SIRE_RENDERER_DX12:
+						renderer = new SireDirectX12();
+						break;
 #endif
 #ifdef SIRE_OPENGL
-				case SIRE_RENDERER_OPENGL:
-					renderer = new SireOpenGL();
-					break;
+					case SIRE_RENDERER_OPENGL:
+						renderer = new SireOpenGL();
+						break;
 #endif
 #ifdef SIRE_VULKAN
-				case SIRE_RENDERER_VULKAN:
-					renderer = new SireVulkan();
-					break;
+					case SIRE_RENDERER_VULKAN:
+						renderer = new SireVulkan();
+						break;
 #endif
 				}
 
@@ -3556,18 +3550,18 @@ public:
 
 		GetRenderers(GetCurrentRenderer())->Init(currentRendererMainPtr);
 
-        SetRenderState(SIRE_BLEND_ALPHATESTENABLE, true);
-        SetRenderState(SIRE_BLEND_SRCBLEND, SIRE_BLEND_SRC_ALPHA);
-        SetRenderState(SIRE_BLEND_DESTBLEND, SIRE_BLEND_INV_SRC_ALPHA);
-        SetRenderState(SIRE_BLEND_BLENDOP, SIRE_BLEND_OP_ADD);
-        SetRenderState(SIRE_BLEND_SRCBLENDALPHA, SIRE_BLEND_ONE);
-        SetRenderState(SIRE_BLEND_DESTBLENDALPHA, SIRE_BLEND_ZERO);
-        SetRenderState(SIRE_BLEND_BLENDOPALPHA, SIRE_BLEND_OP_ADD);
-        SetRenderState(SIRE_BLEND_WRITEMASK, SIRE_COLOR_WRITE_ENABLE_ALL);
-        SetRenderState(SIRE_BLEND_CULLMODE, SIRE_CULL_NONE);
-        SetRenderState(SIRE_BLEND_FILLMODE, SIRE_FILL_SOLID);
-        SetRenderState(SIRE_BLEND_STENCILENABLE, FALSE);
-        SetRenderState(SIRE_BLEND_COLORWRITEENABLE, 0xFFFFFFFF);
+		SetRenderState(SIRE_BLEND_ALPHATESTENABLE, true);
+		SetRenderState(SIRE_BLEND_SRCBLEND, SIRE_BLEND_SRC_ALPHA);
+		SetRenderState(SIRE_BLEND_DESTBLEND, SIRE_BLEND_INV_SRC_ALPHA);
+		SetRenderState(SIRE_BLEND_BLENDOP, SIRE_BLEND_OP_ADD);
+		SetRenderState(SIRE_BLEND_SRCBLENDALPHA, SIRE_BLEND_ONE);
+		SetRenderState(SIRE_BLEND_DESTBLENDALPHA, SIRE_BLEND_ZERO);
+		SetRenderState(SIRE_BLEND_BLENDOPALPHA, SIRE_BLEND_OP_ADD);
+		SetRenderState(SIRE_BLEND_WRITEMASK, SIRE_COLOR_WRITE_ENABLE_ALL);
+		SetRenderState(SIRE_BLEND_CULLMODE, SIRE_CULL_NONE);
+		SetRenderState(SIRE_BLEND_FILLMODE, SIRE_FILL_SOLID);
+		SetRenderState(SIRE_BLEND_STENCILENABLE, FALSE);
+		SetRenderState(SIRE_BLEND_COLORWRITEENABLE, 0xFFFFFFFF);
 
 		auto windowSize = GetWindowSize();
 		SetViewport(0.0f, 0.0f, static_cast<float>(windowSize.x), static_cast<float>(windowSize.y));
@@ -3596,10 +3590,10 @@ public:
 		currentRenderer = SIRE_RENDERER_NULL;
 		currentRendererMainPtr = nullptr;
 
-		#ifdef SIRE_DX11ON12
+#ifdef SIRE_DX11ON12
 		if (d3d11on12::isD3D11on12)
 			d3d11on12::ReleaseViewsBuffersAndContext();
-		#endif
+#endif
 	}
 
 	template<typename T>
@@ -3607,6 +3601,18 @@ public:
 		if (res) {
 			res->Release();
 			res = nullptr;
+		}
+	}
+
+	template<typename T>
+	static inline void Release(T**& res, int32_t count) {
+		if (res) {
+			for (int32_t i = 0; i < count; i++) {
+				if (res[i]) {
+					res[i]->Release();
+					res[i] = nullptr;
+				}
+			}
 		}
 	}
 
@@ -3656,7 +3662,7 @@ public:
 		return resizedPixels;
 	}
 	//
-	
+
 	// Use only if device has non power of 2 support.
 	static inline SirePtr<tSireTexture2D> GetFakeBackBuffer(uint32_t buffer) {
 		static std::vector<uint8_t> data;
@@ -3686,16 +3692,16 @@ public:
 		}
 
 		HBITMAP bmpOld = static_cast<HBITMAP>(SelectObject(compdc, bmp));
-	
+
 		BitBlt(compdc, 0, 0, windowSize.x, windowSize.y, dc, 0, 0, SRCCOPY);
 		GetBitmapBits(bmp, fileSize, data.data());
-	
+
 		auto out = CreateTexture(windowSize.x, windowSize.y, data.data());
 		out->swapColors = true;
 
 		SelectObject(compdc, bmpOld);
 		ReleaseDC(wnd, dc);
-	
+
 		return out;
 	}
 
@@ -3711,14 +3717,13 @@ public:
 		if (!IsRendererActive())
 			return nullptr;
 
-		#ifdef SIRE_DX11ON12
-		if (d3d11on12::isD3D11on12)
-		{
+#ifdef SIRE_DX11ON12
+		if (d3d11on12::isD3D11on12) {
 			d3d11on12::bufferIndex = d3d11on12::swapChain3->GetCurrentBackBufferIndex();
 			d3d11on12::d3d11On12Device->AcquireWrappedResources(d3d11on12::d3d11WrappedBackBuffers[d3d11on12::bufferIndex].GetAddressOf(), 1);
 			d3d11on12::d3d11Context->OMSetRenderTargets(1, d3d11on12::d3d11RenderTargetViews[d3d11on12::bufferIndex].GetAddressOf(), 0);
 		}
-		#endif
+#endif
 
 		if (buffer == -1)
 			return GetFakeBackBuffer(0);
@@ -3727,47 +3732,52 @@ public:
 
 		switch (GetCurrentRenderer()) {
 #ifdef SIRE_DX9
-		case SIRE_RENDERER_DX9: {
-			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetBackBufferSurface(buffer);
-			auto desc = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetDesc(result);
-			out->Set(desc.Width, desc.Height, desc.Format, nullptr, reinterpret_cast<uintptr_t*>(result));
-		} break;
+			case SIRE_RENDERER_DX9:
+			{
+				auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetBackBufferSurface(buffer);
+				auto desc = GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetDesc(result);
+				out->Set(desc.Width, desc.Height, desc.Format, nullptr, reinterpret_cast<uintptr_t*>(result));
+			} break;
 #endif
 #ifdef SIRE_DX10
-		case SIRE_RENDERER_DX10: {
-			auto tex = GetRenderers<SireDirectX10>(GetCurrentRenderer())->GetBackBuffer(buffer);
-
-			if (tex) {
-				auto result = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateShaderResourceView(tex);
-				auto desc = GetRenderers<SireDirectX10>(GetCurrentRenderer())->GetDesc(tex);
+			case SIRE_RENDERER_DX10:
+			{
+				auto tex = GetRenderers<SireDirectX10>(GetCurrentRenderer())->GetBackBuffer(buffer);
 
 				if (tex) {
-					out->Set(desc.Width, desc.Height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
+					auto result = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateShaderResourceView(tex);
+					auto desc = GetRenderers<SireDirectX10>(GetCurrentRenderer())->GetDesc(tex);
+
+					if (tex) {
+						out->Set(desc.Width, desc.Height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
+					}
 				}
-			}
-		} break;
+			} break;
 #endif
 #ifdef SIRE_DX11
-		case SIRE_RENDERER_DX11: {
-			auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetBackBuffer(buffer);
-
-			if (tex) {
-				auto result = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateShaderResourceView(tex);
-				auto desc = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetDesc(tex);
+			case SIRE_RENDERER_DX11:
+			{
+				auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetBackBuffer(buffer);
 
 				if (tex) {
-					out->Set(desc.Width, desc.Height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
+					auto result = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateShaderResourceView(tex);
+					auto desc = GetRenderers<SireDirectX11>(GetCurrentRenderer())->GetDesc(tex);
+
+					if (tex) {
+						out->Set(desc.Width, desc.Height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
+					}
 				}
-			}
-		} break;
+			} break;
 #endif
 #ifdef SIRE_DX12
-		case SIRE_RENDERER_DX12: {
-		} break;
+			case SIRE_RENDERER_DX12:
+			{
+			} break;
 #endif
 #ifdef SIRE_OPENGL
-		case SIRE_RENDERER_OPENGL: {
-		} break;
+			case SIRE_RENDERER_OPENGL:
+			{
+			} break;
 #endif
 		}
 
@@ -3794,7 +3804,27 @@ public:
 
 		return GetRenderers(renderer)->GetTextureFormat();
 	}
-	
+
+	static inline SirePtr<tSireRenderTarget> CreateRenderTargetView(SirePtr<tSireTexture2D> const& texture) {
+		if (!IsRendererActive())
+			return nullptr;
+
+		SirePtr<tSireRenderTarget> out(new tSireRenderTarget);
+		switch (GetCurrentRenderer()) {
+			case SIRE_RENDERER_DX9:
+				out->Set((uintptr_t*)GetRenderers<SireDirectX9>(GetCurrentRenderer())->GetSurfaceLevel((IDirect3DTexture9*)texture->ptrs.surface, 0));
+				break;
+			case SIRE_RENDERER_DX10:
+				out->Set((uintptr_t*)GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateRenderTarget((ID3D10Texture2D*)texture->ptrs.surface));
+				break;
+			case SIRE_RENDERER_DX11:
+				out->Set((uintptr_t*)GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateRenderTarget((ID3D11Texture2D*)texture->ptrs.surface));
+				break;
+		}
+
+		return out;
+	}
+
 	static inline SirePtr<tSireTexture2D> CreateTexture(int32_t width, int32_t height, uint8_t* pixels) {
 		if (!IsRendererActive())
 			return nullptr;
@@ -3803,45 +3833,49 @@ public:
 
 		switch (GetCurrentRenderer()) {
 #ifdef SIRE_DX9
-		case SIRE_RENDERER_DX9: {
-			IDirect3DSurface9* sout = nullptr;
-			auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->CreateTexture(width, height, pixels, &sout);
+			case SIRE_RENDERER_DX9:
+			{
+				IDirect3DSurface9* sout = nullptr;
+				auto result = GetRenderers<SireDirectX9>(GetCurrentRenderer())->CreateTexture(width, height, pixels, &sout);
 
-			if (result)
-				out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(sout));
-		} break;
+				if (result)
+					out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(sout));
+			} break;
 #endif
 #ifdef SIRE_DX10
-		case SIRE_RENDERER_DX10: {
-			auto tex = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
+			case SIRE_RENDERER_DX10:
+			{
+				auto tex = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
 
-			if (tex) {
-				auto result = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateShaderResourceView(tex);
+				if (tex) {
+					auto result = GetRenderers<SireDirectX10>(GetCurrentRenderer())->CreateShaderResourceView(tex);
 
-				if (result)
-					out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
-			}
-		} break;
+					if (result)
+						out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
+				}
+			} break;
 #endif
 #ifdef SIRE_DX11
-		case SIRE_RENDERER_DX11: {
-			auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
+			case SIRE_RENDERER_DX11:
+			{
+				auto tex = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateTexture(width, height, pixels);
 
-			if (tex) {
-				auto result = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateShaderResourceView(tex);
+				if (tex) {
+					auto result = GetRenderers<SireDirectX11>(GetCurrentRenderer())->CreateShaderResourceView(tex);
 
-				if (result)
-					out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
-			}
-		} break;
+					if (result)
+						out->Set(width, height, 0, reinterpret_cast<uintptr_t*>(result), reinterpret_cast<uintptr_t*>(tex));
+				}
+			} break;
 #endif
 #ifdef SIRE_DX12
-		case SIRE_RENDERER_DX12:
-			break;
+			case SIRE_RENDERER_DX12:
+				break;
 #endif
 #ifdef SIRE_OPENGL
-		case SIRE_RENDERER_OPENGL: {
-		} break;
+			case SIRE_RENDERER_OPENGL:
+			{
+			} break;
 #endif
 		}
 
@@ -3880,15 +3914,15 @@ public:
 			return;
 
 		switch (proj) {
-		case SIRE_PROJ_NONE:
-			cb.matrix.Identity();
-			break;
-		case SIRE_PROJ_ORTHOGRAPHIC:
-			cb.matrix.Orthographic(shared.viewport.x, shared.viewport.y, shared.viewport.w, shared.viewport.h, shared.nearPlane, shared.farPlane);
-			break;
-		case SIRE_PROJ_PERSPECTIVE:
-			cb.matrix.Perspective(shared.fov, shared.viewport.w / shared.viewport.h, shared.nearPlane, shared.farPlane);
-			break;
+			case SIRE_PROJ_NONE:
+				cb.matrix.Identity();
+				break;
+			case SIRE_PROJ_ORTHOGRAPHIC:
+				cb.matrix.Orthographic(shared.viewport.x, shared.viewport.y, shared.viewport.w, shared.viewport.h, shared.nearPlane, shared.farPlane);
+				break;
+			case SIRE_PROJ_PERSPECTIVE:
+				cb.matrix.Perspective(shared.fov, shared.viewport.w / shared.viewport.h, shared.nearPlane, shared.farPlane);
+				break;
 		}
 	}
 
@@ -3908,6 +3942,13 @@ public:
 			tex1 = mask->ptrs.texture;
 
 		return GetRenderers(GetCurrentRenderer())->SetTexture(tex0, tex1);
+	}
+
+	static inline void SetRenderTarget(SirePtr<tSireRenderTarget> const& renderTargetView) {
+		if (renderTargetView)
+			currentRenderTargetView = renderTargetView->renderTargetView;
+		else
+			currentRenderTargetView = nullptr;
 	}
 
 	static inline void DrawTriangle(tSireFloat4 const& rect) {
